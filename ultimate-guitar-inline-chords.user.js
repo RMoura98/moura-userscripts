@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Ultimate Guitar inline chords
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/RMoura98/moura-userscripts
 // @version      2024-05-15
 // @description  Replaces the chord labels with inline chords
 // @author       @RMoura98

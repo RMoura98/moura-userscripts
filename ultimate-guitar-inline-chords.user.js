@@ -7,12 +7,11 @@
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=ultimate-guitar.com
 // @grant        GM_addStyle
-// @version      0.1.0
 // @updateURL    https://github.com/RMoura98/Ultimate-Guitar-inline-chords/raw/main/ultimate-guitar-inline-chords.user.js
 // @downloadURL  https://github.com/RMoura98/Ultimate-Guitar-inline-chords/raw/main/ultimate-guitar-inline-chords.user.js
 // ==/UserScript==
 
-GM_addStyle("span[data-name] {font-size: 0; margin: -25px 0px !important; display: inline-block; height: 50px; transform: translate(0px, 15px);} span[data-name]:after {content: none;}")
+GM_addStyle("span[data-name] {font-size: 0; margin: -25px -28px !important; display: inline-block; height: 50px; transform: translate(0px, 15px);} span[data-name]:after {content: none;}")
 
 const CHORD_SECTION_SELECTOR = "article > section:nth-child(2) > article > section"
 const CHORD_SECTION_TO_CHORDS_SELECTOR = "section > div > div"

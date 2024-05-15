@@ -3,7 +3,7 @@
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @version      2024-05-15
 // @description  Replaces the chord labels with inline chords
-// @author       @RMoura98
+// @author       @RMoura98 (https://github.com/RMoura98)
 // @match        https://tabs.ultimate-guitar.com/tab/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=ultimate-guitar.com
 // @grant        GM_addStyle

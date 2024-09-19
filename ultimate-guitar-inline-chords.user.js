@@ -25,7 +25,7 @@ const findChordElements = () => {
 }
 
 const mapChordToCanvas = (chords) => [...chords]
-.reduce((f, e) => ({ ...f, [e.querySelector("span").textContent]: e.querySelector("canvas")}), {})
+.reduce((f, e) => ({ ...f, [e.children[0].textContent]: e.querySelector("canvas")}), {})
 
 const copyCanvas = (sourceCanvas, destinationCanvas) => {
     let destCtx = destinationCanvas.getContext('2d');

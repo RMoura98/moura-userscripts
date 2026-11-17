@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt → Sonarr / Radarr / Jellyfin](#trakt--sonarr--radarr--jellyfin) | Follow, monitor and search in Sonarr/Radarr from Trakt, plus a Jellyfin tile in "Where to Watch" | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js) | 2026-11-17 |
 | ✅ | [![Claude](https://www.google.com/s2/favicons?sz=12&domain=claude.ai) Claude.ai login email autofill](#claudeai-login-email-autofill) | Prefills your email on the Claude.ai login page (email set from the Tampermonkey menu) | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js) | 2026-11-17 |
 | ✅ | [![Allianz Care](https://www.google.com/s2/favicons?sz=12&domain=allianzcare.com) Allianz Care timeout redirect](#allianz-care-timeout-redirect) | Skips the MyHealth session-timeout login page and goes back to the home page | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/allianz-timeout-redirect.user.js) | 2026-11-17 |
 | ✅ | [![W2G](https://www.google.com/s2/favicons?sz=12&domain=w2g.tv) W2G Watchdog](#w2g-watchdog) | Live memory/lag/connection stats for Watch2Gether rooms, plus safe auto-reload | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js) | 2026-11-17 |
@@ -66,3 +67,15 @@ Prefills the email field on the Claude.ai login and signup pages. It never overw
 The email isn't stored in the script: set it once from the Tampermonkey menu → **Set login email** (leave it empty to turn the autofill off).
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js)
+
+## Trakt → Sonarr / Radarr / Jellyfin
+
+Connects Trakt show and movie pages (`app.trakt.tv`) to your own media stack. No Trakt API key needed.
+
+- **Action button** in Trakt's action bar, with a status dot (following / paused / error) and a dropdown styled like Trakt's own menus.
+- **Sonarr / Radarr** – see episode or file status and size, follow or unfollow, monitor the current season, start a search, or add the title (with your chosen quality profile and root folder).
+- **Jellyfin** – if the title (or season) is in your library, a Jellyfin tile shows up in "Where to Watch" and opens it directly.
+
+Nothing personal is stored in the script: set the Sonarr, Radarr and Jellyfin URLs and API keys from the Tampermonkey menu (or the **Settings…** item in the dropdown). Failed requests are logged to the console under `[Trakt-arr]`, with keys masked.
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js)

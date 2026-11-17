@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![Rails](https://www.google.com/s2/favicons?sz=12&domain=rubyonrails.org) Mini Profiler fade](#mini-profiler-fade) | Dims the rack-mini-profiler badge on localhost:3000 | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js) | 2026-11-17 |
 | ✅ | [![Google Flights](https://www.google.com/s2/favicons?sz=12&domain=flights.google.com) Google Flights price per person](#google-flights-price-per-person) | Hover a total price to see it split per passenger | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js) | 2026-11-17 |
 | ✅ | [![MyAnimeList](https://www.google.com/s2/favicons?sz=12&domain=myanimelist.net) MAL Seasonal Tab Opener](#mal-seasonal-tab-opener) | Opens every anime in the home page seasonal widget in background tabs | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mal-seasonal-tab-opener.user.js) | 2026-11-17 |
 | ✅ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt → Sonarr / Radarr / Jellyfin](#trakt--sonarr--radarr--jellyfin) | Follow, monitor and search in Sonarr/Radarr from Trakt, plus a Jellyfin tile in "Where to Watch" | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js) | 2026-11-17 |
@@ -93,3 +94,9 @@ Adds an **Open All Tabs** link next to "View More" in the seasonal anime widget 
 Google Flights shows the total for all passengers. When you search for more than one passenger, hover any price to see what it comes to per person (for example "€153 per person (2 passengers)"). Works with prices shown in euros.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js)
+
+## Mini Profiler fade
+
+Makes the [rack-mini-profiler](https://github.com/MiniProfiler/rack-mini-profiler) timing badge 10% opaque on local Rails apps (`http://localhost:3000`), so it stays out of the way.
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js)

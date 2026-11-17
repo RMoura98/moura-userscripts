@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![Claude](https://www.google.com/s2/favicons?sz=12&domain=claude.ai) Claude.ai login email autofill](#claudeai-login-email-autofill) | Prefills your email on the Claude.ai login page (email set from the Tampermonkey menu) | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js) | 2026-11-17 |
 | ✅ | [![Allianz Care](https://www.google.com/s2/favicons?sz=12&domain=allianzcare.com) Allianz Care timeout redirect](#allianz-care-timeout-redirect) | Skips the MyHealth session-timeout login page and goes back to the home page | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/allianz-timeout-redirect.user.js) | 2026-11-17 |
 | ✅ | [![W2G](https://www.google.com/s2/favicons?sz=12&domain=w2g.tv) W2G Watchdog](#w2g-watchdog) | Live memory/lag/connection stats for Watch2Gether rooms, plus safe auto-reload | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js) | 2026-11-17 |
 | ✅ | [![Telegram](https://www.google.com/s2/favicons?sz=12&domain=telegram.org) Telegram auto-close chat](#telegram-auto-close-chat) | Closes the open chat and returns to the chat list when you leave the tab | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/telegram-auto-close-chat.user.js) | 2026-11-17 |
@@ -57,3 +58,11 @@ Presses Escape to close the open chat and return to the chat list whenever the T
 When your MyHealth session expires, Allianz Care drops you on a login page with `timeOut=true`. This sends you straight back to the Allianz Care home page instead.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/allianz-timeout-redirect.user.js)
+
+## Claude.ai login email autofill
+
+Prefills the email field on the Claude.ai login and signup pages. It never overwrites something you've already typed.
+
+The email isn't stored in the script: set it once from the Tampermonkey menu → **Set login email** (leave it empty to turn the autofill off).
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js)

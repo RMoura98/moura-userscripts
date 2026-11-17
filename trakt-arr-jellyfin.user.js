@@ -3,8 +3,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=trakt.tv
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @author       @RMoura98
-// @version      2026-11-17
-// @description  Adds a Sonarr/Radarr action button to Trakt show and movie pages and a Jellyfin tile in "Where to Watch".
+// @version      2026-11-17.1
+// @description  Adds a Sonarr/Radarr action button to Trakt show and movie pages and a Jellyfin tile in "Where to Watch", and refreshes the Home page every hour.
 // @match        https://app.trakt.tv/*
 // @run-at       document-idle
 // @grant        GM_getValue
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    const VERSION = '2026-11-17';
+    const VERSION = '2026-11-17.1';
 
     // One-time cleanup of storage left over from the old MyAnimeList / Trakt-API versions
     ['fribbMap', 'fribbMap2', 'traktIds', 'traktClientId'].forEach(k => {
@@ -930,6 +930,23 @@
         }
         inject(); // re-inject anything Svelte replaced (doesn't touch an open dropdown)
     };
+
+    // ######################################################################
+    // HOME AUTO-REFRESH (replaces the old "Trakt Autorefresher" for trakt.tv/dashboard,
+    // which now redirects to app.trakt.tv/home)
+    // Reloads Home after it has been open this long, unless you're typing or our dropdown is open.
+    // ######################################################################
+    const HOME_REFRESH_MINUTES = 60;
+    let homeSince = 0;
+    setInterval(() => {
+        if (!/^\/home\/?$/.test(location.pathname)) { homeSince = 0; return; }
+        homeSince ||= Date.now();
+        if (Date.now() - homeSince < HOME_REFRESH_MINUTES * 60_000) return;
+        const a = document.activeElement;
+        const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+        if (typing || pop) return; // try again on the next check
+        location.reload();
+    }, 30_000);
 
     // ######################################################################
     // Boot

@@ -12,7 +12,7 @@
 | ✅ | [![W2G](https://www.google.com/s2/favicons?sz=12&domain=w2g.tv) W2G Watchdog](#w2g-watchdog) | Live memory/lag/connection stats for Watch2Gether rooms, plus safe auto-reload | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js) | 2026-11-17 |
 | ✅ | [![Telegram](https://www.google.com/s2/favicons?sz=12&domain=telegram.org) Telegram auto-close chat](#telegram-auto-close-chat) | Closes the open chat and returns to the chat list when you leave the tab | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/telegram-auto-close-chat.user.js) | 2026-11-17 |
 | ✅ | [![ultimate-guitar](https://www.google.com/s2/favicons?sz=12&domain=ultimate-guitar.com) Ultimate Guitar inline chords](#ultimate-guitar-inline-chords) | Replaces the chord labels with inline chords | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/ultimate-guitar-inline-chords.user.js) | 2026-10-07 |
-| ✅ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt dashboard multiple rows](#trakt-dashboard-multiple-rows) | Allows to have multiple rows of tvshows on the trakt dashboard | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-dashboard-multiple-rows.user.js) | 2025-10-04 |
+| ❌ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt dashboard multiple rows](#trakt-dashboard-multiple-rows) | Retired: Trakt's old dashboard now redirects to app.trakt.tv | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-dashboard-multiple-rows.user.js) | 2025-10-04 |
 
 ## W2G Watchdog
 
@@ -41,6 +41,8 @@ Replaces the chord labels with inline chords.
  
 
 ## Trakt dashboard multiple rows
+
+> ❌ **Retired.** Trakt's old dashboard (`trakt.tv/dashboard`) now redirects to the new app (`app.trakt.tv/home`), so this script no longer runs. Its hourly auto-refresh lives on in [Trakt → Sonarr / Radarr / Jellyfin](#trakt--sonarr--radarr--jellyfin).
 
 Allows to have multiple rows of tvshows on the trakt dashboard
 
@@ -78,6 +80,7 @@ Connects Trakt show and movie pages (`app.trakt.tv`) to your own media stack. No
 - **Action button** in Trakt's action bar, with a status dot (following / paused / error) and a dropdown styled like Trakt's own menus.
 - **Sonarr / Radarr** – see episode or file status and size, follow or unfollow, monitor the current season, start a search, or add the title (with your chosen quality profile and root folder).
 - **Jellyfin** – if the title (or season) is in your library, a Jellyfin tile shows up in "Where to Watch" and opens it directly.
+- **Home auto-refresh** – reloads `app.trakt.tv/home` once it has been open for an hour (not while you're typing or the dropdown is open), so Up Next stays current. Change `HOME_REFRESH_MINUTES` to adjust.
 
 Nothing personal is stored in the script: set the Sonarr, Radarr and Jellyfin URLs and API keys from the Tampermonkey menu (or the **Settings…** item in the dropdown). Failed requests are logged to the console under `[Trakt-arr]`, with keys masked.
 

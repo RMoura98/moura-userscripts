@@ -18,7 +18,7 @@
 Long-running Watch2Gether rooms get heavy and sluggish over time. This keeps an eye on the room and reloads it for you at a safe moment, without losing your place in the chat.
 
 - **Live stats badge** – memory (JS heap), main-thread lag and connection state, with a details panel. Turns yellow as memory climbs.
-- **Safe auto-reload** – reloads when memory passes ~800 MB, lag stays high for a couple of minutes, or the room has been open for 4 hours. It waits until you're idle and not typing, then shows a 15-second countdown you can cancel or snooze ("Not now").
+- **Safe auto-reload** – reloads when memory passes ~800 MB or lag stays high for a couple of minutes (no fixed time limit; optional via `maxUptimeHours`). It waits until you're idle and not typing, then shows a 15-second countdown you can cancel or snooze ("Not now").
 - **Keeps your chat draft** – whatever you were typing is restored after the reload.
 - **Disconnect recovery** – if the room is stuck on W2G's "not connected" spinner, it reloads after a short countdown, backing off on repeated failures.
 - **Tampermonkey menu** – show/hide the badge, move it to another corner, reload now, or snooze/resume auto-reload.

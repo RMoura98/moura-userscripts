@@ -3,7 +3,7 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=w2g.tv
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @author       @RMoura98
-// @version      2026-11-17
+// @version      2026-11-17.1
 // @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner.
 // @match        https://w2g.tv/*
 // @run-at       document-idle
@@ -24,7 +24,7 @@
     statsEveryMs: 2_000,           // how often the badge refreshes (only while the tab is visible)
     warnHeapMB: 500,               // badge turns yellow + one-time heads-up (JS heap; Task Manager shows more than this)
     reloadHeapMB: 800,             // start the reload flow (~roughly 1 GB+ in Chrome's Task Manager)
-    maxUptimeHours: 4,             // reload after this long regardless (also covers Firefox, which has no memory API)
+    maxUptimeHours: 0,             // 0 = off (trust memory). Set e.g. 4 to also reload after this long (useful in Firefox, which has no memory API)
     lagReloadMs: 250,              // avg main-thread lag that counts as "sluggish"
     lagSustainMin: 2,              // ...if sustained this many minutes
     idleBeforeReloadSec: 20,       // wait until no mouse/keyboard input for this long
@@ -64,6 +64,7 @@
   const heapMB = () =>
     performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
   const uptimeH = () => (performance.now() - startedAt) / 3_600_000;
+  const uptimeLimitOn = CFG.maxUptimeHours > 0;
   const allEls = document.getElementsByTagName('*'); // live collection, cheap .length
   const domCount = () => allEls.length;
   const fmtMB = (mb) => (mb === null ? '—' : mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
@@ -258,8 +259,8 @@
   function level() {
     const h = heapMB();
     const up = uptimeH();
-    if (disconnectedSince || (h !== null && h >= CFG.reloadHeapMB) || up >= CFG.maxUptimeHours || laggySince) return 'bad';
-    if ((h !== null && h >= CFG.warnHeapMB) || up >= CFG.maxUptimeHours * 0.75 || lagEma > CFG.lagReloadMs / 2) return 'warn';
+    if (disconnectedSince || (h !== null && h >= CFG.reloadHeapMB) || (uptimeLimitOn && up >= CFG.maxUptimeHours) || laggySince) return 'bad';
+    if ((h !== null && h >= CFG.warnHeapMB) || (uptimeLimitOn && up >= CFG.maxUptimeHours * 0.75) || lagEma > CFG.lagReloadMs / 2) return 'warn';
     return 'ok';
   }
 
@@ -275,7 +276,7 @@
     const h = heapMB();
     const parts = [];
     if (h !== null) parts.push(`${fmtMB(CFG.reloadHeapMB)} memory`);
-    parts.push(`${CFG.maxUptimeHours} h open`);
+    if (uptimeLimitOn) parts.push(`${CFG.maxUptimeHours} h open`);
     parts.push(`${CFG.lagSustainMin} min of lag`);
     let s = `Auto-reloads at ${parts.join(', ')} — only when you're idle. Also recovers if the room disconnects.`;
     const g = growthMBPerHour();
@@ -301,7 +302,7 @@
     memBar.className = `w2gwd-${lv}`;
     const g = growthMBPerHour();
     field('growth').textContent = g === null ? 'measuring…' : `${g > 0 ? '+' : ''}${g} MB/h`;
-    field('uptime').textContent = `${fmtH(uptimeH())} / ${CFG.maxUptimeHours} h`;
+    field('uptime').textContent = uptimeLimitOn ? `${fmtH(uptimeH())} / ${CFG.maxUptimeHours} h` : fmtH(uptimeH());
     field('dom').textContent = domCount().toLocaleString();
     field('lag').textContent = document.visibilityState === 'visible' ? `${Math.round(lagEma)} ms` : 'tab hidden';
     field('status').textContent = statusText();
@@ -474,7 +475,7 @@
     if (flowKind === 'disconnect' || disconnectedSince) return; // connection watchdog handles this
     const h = heapMB();
     if (h !== null && h >= CFG.reloadHeapMB) return startReloadFlow(`Memory has grown to ${fmtMB(h)}.`);
-    if (uptimeH() >= CFG.maxUptimeHours) return startReloadFlow(`The room has been open ${fmtH(uptimeH())}.`);
+    if (uptimeLimitOn && uptimeH() >= CFG.maxUptimeHours) return startReloadFlow(`The room has been open ${fmtH(uptimeH())}.`);
     if (laggySince && Date.now() - laggySince > CFG.lagSustainMin * 60_000)
       return startReloadFlow('The page has been lagging for a few minutes.');
     if (h !== null && h >= CFG.warnHeapMB && !warned && !flowActive) {

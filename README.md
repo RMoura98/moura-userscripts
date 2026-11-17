@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![Allianz Care](https://www.google.com/s2/favicons?sz=12&domain=allianzcare.com) Allianz Care timeout redirect](#allianz-care-timeout-redirect) | Skips the MyHealth session-timeout login page and goes back to the home page | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/allianz-timeout-redirect.user.js) | 2026-11-17 |
 | ✅ | [![W2G](https://www.google.com/s2/favicons?sz=12&domain=w2g.tv) W2G Watchdog](#w2g-watchdog) | Live memory/lag/connection stats for Watch2Gether rooms, plus safe auto-reload | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js) | 2026-11-17 |
 | ✅ | [![Telegram](https://www.google.com/s2/favicons?sz=12&domain=telegram.org) Telegram auto-close chat](#telegram-auto-close-chat) | Closes the open chat and returns to the chat list when you leave the tab | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/telegram-auto-close-chat.user.js) | 2026-11-17 |
 | ✅ | [![ultimate-guitar](https://www.google.com/s2/favicons?sz=12&domain=ultimate-guitar.com) Ultimate Guitar inline chords](#ultimate-guitar-inline-chords) | Replaces the chord labels with inline chords | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/ultimate-guitar-inline-chords.user.js) | 2026-10-07 |
@@ -50,3 +51,9 @@ Allows to have multiple rows of tvshows on the trakt dashboard
 Presses Escape to close the open chat and return to the chat list whenever the Telegram Web tab is hidden.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/telegram-auto-close-chat.user.js)
+
+## Allianz Care timeout redirect
+
+When your MyHealth session expires, Allianz Care drops you on a login page with `timeOut=true`. This sends you straight back to the Allianz Care home page instead.
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/allianz-timeout-redirect.user.js)

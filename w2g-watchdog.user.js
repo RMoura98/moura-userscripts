@@ -13,6 +13,7 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
+// @grant        unsafeWindow
 // @updateURL    https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // @downloadURL  https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // ==/UserScript==
@@ -24,9 +25,11 @@
   const audioOn = () => GM_getValue(GM_AUDIO, true) !== false;
 
   // ######################################################################
-  // AUDIO ONLY — runs inside the YouTube player frame embedded in a W2G room
-  // Same idea as the "Audio Only for YouTube" extension: find the audio-only
-  // stream YouTube requests, point the <video> at it, and show the thumbnail.
+  // AUDIO MODE — runs inside the YouTube player frame embedded in a W2G room
+  // YouTube now streams audio+video together (SABR), so a true audio-only
+  // stream isn't available. Instead: force the lowest quality (144p) and show
+  // the thumbnail instead of the picture. Near-zero video bandwidth/decoding,
+  // and W2G's sync keeps working because the player itself is untouched.
   // ######################################################################
   if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
     const inW2G = () => {
@@ -37,74 +40,46 @@
     };
     if (window === window.top || !inW2G()) return;
 
-    let lastAudio = null;   // { url, at }
-    let blobSrc = '';       // the player's own (MSE) src we last saw
-    let blobSeenAt = 0;
-
-    // Audio-only stream URL: mime=audio/*, minus the byte-range bits so it plays as one file
-    const audioUrlFrom = (raw) => {
-      try {
-        const u = new URL(raw);
-        if (!/\.googlevideo\.com$/.test(u.hostname) || u.pathname !== '/videoplayback') return null;
-        if (!/^audio\//.test(u.searchParams.get('mime') || '')) return null;
-        ['range', 'rn', 'rbuf', 'ump', 'srfvp'].forEach((k) => u.searchParams.delete(k));
-        return u.toString();
-      } catch (_) { return null; }
+    const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const getPlayer = () => {
+      const p = page.document.getElementById('movie_player');
+      return p && typeof p.setPlaybackQualityRange === 'function' ? p : null;
     };
+    let applied = false; // whether audio mode is currently applied to the player
 
-    try {
-      new PerformanceObserver((list) => {
-        for (const e of list.getEntries()) {
-          const url = audioUrlFrom(e.name);
-          if (url) lastAudio = { url, at: Date.now() };
-        }
-      }).observe({ type: 'resource', buffered: true });
-    } catch (_) {}
-
-    const currentVideoId = () => {
-      const link = document.querySelector('.ytp-title-link[href*="v="]');
-      const m = (link && link.href.match(/[?&]v=([\w-]{11})/)) || location.pathname.match(/\/embed\/([\w-]{11})/);
-      return m ? m[1] : '';
-    };
-
-    const showThumbnail = (video) => {
-      const player = video.closest('.html5-video-player');
-      const id = currentVideoId();
-      video.style.width = '1px';
-      video.style.height = '1px';
-      if (player && id) {
-        player.style.backgroundColor = '#000';
-        player.style.backgroundSize = 'contain';
-        player.style.backgroundPosition = 'center';
-        player.style.backgroundRepeat = 'no-repeat';
-        player.style.backgroundImage = `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)`;
-      }
-    };
-
-    const tick = () => {
-      if (!audioOn()) return;
+    const apply = () => {
+      const player = getPlayer();
       const video = document.querySelector('video');
-      if (!video) return;
-      const src = video.currentSrc || video.src || '';
-      if (src.startsWith('blob:')) {
-        if (src !== blobSrc) { blobSrc = src; blobSeenAt = Date.now(); }
-        // Only use an audio URL requested for this load (not a leftover from the previous video)
-        if (lastAudio && lastAudio.at >= blobSeenAt - 1000) {
-          const t = video.currentTime;
-          const wasPaused = video.paused;
-          try {
-            video.src = lastAudio.url;
-            video.addEventListener('loadedmetadata', () => {
-              try { video.currentTime = t; } catch (_) {}
-              if (!wasPaused) video.play().catch(() => {});
-            }, { once: true });
-          } catch (_) {}
+      if (!player || !video) return;
+      const box = video.closest('.html5-video-player');
+
+      if (audioOn()) {
+        try {
+          const levels = player.getAvailableQualityLevels ? player.getAvailableQualityLevels() : [];
+          // Re-apply on every new video W2G loads; live streams may not offer 'tiny'
+          if (player.getPlaybackQuality() !== 'tiny' && (!levels.length || levels.includes('tiny'))) {
+            player.setPlaybackQualityRange('tiny', 'tiny');
+          }
+        } catch (_) {}
+        const id = (player.getVideoData && player.getVideoData().video_id) || '';
+        video.style.opacity = '0';
+        if (box) {
+          box.style.backgroundColor = '#000';
+          box.style.backgroundSize = 'contain';
+          box.style.backgroundPosition = 'center';
+          box.style.backgroundRepeat = 'no-repeat';
+          box.style.backgroundImage = id ? `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)` : '';
         }
+        applied = true;
+      } else if (applied) {
+        try { player.setPlaybackQualityRange('default', 'default'); } catch (_) {}
+        video.style.opacity = '';
+        if (box) box.style.backgroundImage = '';
+        applied = false;
       }
-      showThumbnail(video);
     };
-    setInterval(tick, 1000);
-    GM_addValueChangeListener(GM_AUDIO, () => tick()); // turning it on applies live; off is handled by reloading the room
+    setInterval(apply, 1000);
+    GM_addValueChangeListener(GM_AUDIO, () => apply()); // toggles apply live, both ways
     return;
   }
 
@@ -356,22 +331,17 @@
     audioChip.textContent = on ? '🎧 Audio only' : '🎧';
     audioChip.classList.toggle('w2gwd-on', on);
     audioChip.title = on
-      ? 'Audio only is ON: YouTube plays just the audio track (saves bandwidth, CPU and memory). Click to bring the video back.'
-      : 'Audio only is OFF. Click to play just the audio track of YouTube videos.';
+      ? 'Audio only is ON: YouTube plays at 144p behind the thumbnail (saves bandwidth, CPU and memory). Click to bring the video back.'
+      : 'Audio only is OFF. Click to hide YouTube video and drop it to 144p.';
   }
   function toggleAudio() {
     const on = !audioOn();
     GM_setValue(GM_AUDIO, on);
     renderAudio(); renderStats();
     if (on) {
-      toast({ title: 'Audio only on', body: 'YouTube videos now play just the audio track, with the thumbnail instead of the picture.', autoHideMs: 5000 });
+      toast({ title: 'Audio only on', body: 'YouTube now plays at the lowest quality with the thumbnail instead of the picture: almost no video bandwidth or decoding.', autoHideMs: 5000 });
     } else {
-      toast({
-        title: 'Audio only off',
-        body: 'The video comes back after the room reloads. Your chat draft is kept.',
-        actions: [{ label: 'Later', onClick: closeToast }, { label: 'Reload now', primary: true, onClick: () => doReload() }],
-        autoHideMs: 15_000,
-      });
+      toast({ title: 'Audio only off', body: 'Video is back at normal quality (the picture sharpens as it buffers).', autoHideMs: 5000 });
     }
   }
   audioChip.addEventListener('click', (e) => { e.stopPropagation(); toggleAudio(); });

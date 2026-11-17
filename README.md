@@ -19,7 +19,7 @@ Long-running Watch2Gether rooms get heavy and sluggish over time. This keeps an 
 - **Safe auto-reload** – reloads when memory passes ~800 MB or lag stays high for a couple of minutes (no fixed time limit; optional via `maxUptimeHours`). It waits until you're idle and not typing, then shows a 15-second countdown you can cancel or snooze ("Not now").
 - **Keeps your chat draft** – whatever you were typing is restored after the reload.
 - **Disconnect recovery** – if the room is stuck on W2G's "not connected" spinner, it reloads after a short countdown, backing off on repeated failures.
-- **Audio only (on by default)** – YouTube videos play just the audio track with the thumbnail instead of the picture, like the *Audio Only for YouTube* extension: less bandwidth, CPU and memory. Toggle it with the 🎧 button on the stats badge or from the menu (turning the video back on reloads the room, keeping your chat draft). Doesn't work for live streams.
+- **Audio only (on by default)** – YouTube videos drop to the lowest quality (144p) and show the thumbnail instead of the picture, so the room barely spends any bandwidth, CPU or memory on video. W2G's sync keeps working. Toggle it live with the 🎧 button on the stats badge or from the menu. (YouTube no longer serves a separate audio-only stream, so this is the closest a script or extension can get.)
 - **Tampermonkey menu** – show/hide the badge, move it to another corner, reload now, or snooze/resume auto-reload.
 
 Only runs inside rooms (`w2g.tv/*/room/...`) and in the YouTube player embedded in them. Thresholds live in the `CFG` block at the top of the script.

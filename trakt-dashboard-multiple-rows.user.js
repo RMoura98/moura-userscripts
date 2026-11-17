@@ -1,11 +1,12 @@
 // ==UserScript==
-// @name         Trakt dashboard multiple rows
-// @namespace    https://github.com/RMoura98/moura-userscripts
-// @version      2024-10-04
-// @description  Display multiple rows of TV shows on the Trakt dashboard by hiding clutter and increasing row count
-// @author       @RMoura98
-// @match        https://trakt.tv/dashboard
+// @name         Trakt Dashboard – multiple rows & hourly auto-refresh
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=trakt.tv
+// @namespace    https://github.com/RMoura98/moura-userscripts
+// @author       @RMoura98
+// @version      2026-11-17
+// @description  Shows multiple rows of TV shows on the Trakt dashboard by hiding clutter and increasing the row count, and refreshes the dashboard every hour.
+// @match        https://trakt.tv/dashboard
+// @run-at       document-idle
 // @grant        GM_addStyle
 // @updateURL    https://github.com/RMoura98/moura-userscripts/raw/main/trakt-dashboard-multiple-rows.user.js
 // @downloadURL  https://github.com/RMoura98/moura-userscripts/raw/main/trakt-dashboard-multiple-rows.user.js
@@ -77,4 +78,11 @@ GM_addStyle(`
   });
 
   observer.observe(document, { childList: true, subtree: true });
+
+  // Auto-refresh the dashboard (merged from "Trakt Autorefresher")
+  const REFRESH_SECONDS = 3600;
+  const refresh = document.createElement('meta');
+  refresh.setAttribute('http-equiv', 'refresh');
+  refresh.setAttribute('content', String(REFRESH_SECONDS));
+  document.head.append(refresh);
 })();

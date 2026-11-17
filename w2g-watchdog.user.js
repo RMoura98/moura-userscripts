@@ -1,91 +1,19 @@
 // ==UserScript==
-// @name         W2G Watchdog – memory guard, live stats, audio-only & safe auto-reload
+// @name         W2G Watchdog – memory guard, live stats & safe auto-reload
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=w2g.tv
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @author       @RMoura98
 // @version      2026-11-17.1
-// @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner, and can play YouTube videos audio-only.
+// @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner.
 // @match        https://w2g.tv/*
-// @match        https://www.youtube.com/embed/*
-// @match        https://www.youtube-nocookie.com/embed/*
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        GM_addValueChangeListener
-// @grant        unsafeWindow
 // @updateURL    https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // @downloadURL  https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // ==/UserScript==
 
 (function () {
   'use strict';
-
-  const GM_AUDIO = 'audioOnly'; // shared between the W2G page and the YouTube player frame (default: on)
-  const audioOn = () => GM_getValue(GM_AUDIO, true) !== false;
-
-  // ######################################################################
-  // AUDIO MODE — runs inside the YouTube player frame embedded in a W2G room
-  // YouTube now streams audio+video together (SABR), so a true audio-only
-  // stream isn't available. Instead: force the lowest quality (144p) and show
-  // the thumbnail instead of the picture. Near-zero video bandwidth/decoding,
-  // and W2G's sync keeps working because the player itself is untouched.
-  // ######################################################################
-  if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
-    const inW2G = () => {
-      const anc = location.ancestorOrigins ? [...location.ancestorOrigins] : [];
-      return anc.some((o) => /(^|\.)w2g\.tv$/.test(new URL(o).hostname)) ||
-        /w2g\.tv/.test(document.referrer) ||
-        /w2g\.tv/.test(new URLSearchParams(location.search).get('origin') || '');
-    };
-    if (window === window.top || !inW2G()) return;
-
-    const page = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-    const getPlayer = () => {
-      const p = page.document.getElementById('movie_player');
-      return p && typeof p.setPlaybackQualityRange === 'function' ? p : null;
-    };
-    let applied = false; // whether audio mode is currently applied to the player
-
-    const apply = () => {
-      const player = getPlayer();
-      const video = document.querySelector('video');
-      if (!player || !video) return;
-      const box = video.closest('.html5-video-player');
-
-      if (audioOn()) {
-        try {
-          const levels = player.getAvailableQualityLevels ? player.getAvailableQualityLevels() : [];
-          // Re-apply on every new video W2G loads; live streams may not offer 'tiny'
-          if (player.getPlaybackQuality() !== 'tiny' && (!levels.length || levels.includes('tiny'))) {
-            player.setPlaybackQualityRange('tiny', 'tiny');
-          }
-        } catch (_) {}
-        const id = (player.getVideoData && player.getVideoData().video_id) || '';
-        video.style.opacity = '0';
-        if (box) {
-          box.style.backgroundColor = '#000';
-          box.style.backgroundSize = 'contain';
-          box.style.backgroundPosition = 'center';
-          box.style.backgroundRepeat = 'no-repeat';
-          box.style.backgroundImage = id ? `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)` : '';
-        }
-        applied = true;
-      } else if (applied) {
-        try { player.setPlaybackQualityRange('default', 'default'); } catch (_) {}
-        video.style.opacity = '';
-        if (box) box.style.backgroundImage = '';
-        applied = false;
-      }
-    };
-    setInterval(apply, 1000);
-    GM_addValueChangeListener(GM_AUDIO, () => apply()); // toggles apply live, both ways
-    return;
-  }
-
-  // ######################################################################
-  // W2G ROOM
-  // ######################################################################
 
   // Only run inside a room
   if (!/\/room\b/.test(location.pathname)) return;
@@ -223,12 +151,6 @@
     .w2gwd-ok   { background: rgb(34,197,94); }
     .w2gwd-warn { background: rgb(253,189,0); }
     .w2gwd-bad  { background: rgb(235,54,87); }
-    #w2gwd-badge .w2gwd-audio {
-      margin-left: 2px; padding: 0 6px; border-radius: 4px; line-height: 18px;
-      border-left: 1px solid rgb(58,71,89); color: rgba(255,255,255,.55);
-    }
-    #w2gwd-badge .w2gwd-audio.w2gwd-on { background: rgb(42,104,194); color: #fff; border-left-color: transparent; }
-    #w2gwd-badge .w2gwd-audio:hover { color: #fff; }
 
     /* Panel */
     #w2gwd-panel {
@@ -294,7 +216,7 @@
   const badge = document.createElement('div');
   badge.id = 'w2gwd-badge';
   badge.title = 'W2G Watchdog – click for details';
-  badge.innerHTML = '<span class="w2gwd-dot w2gwd-ok"></span><span class="w2gwd-label">…</span><span class="w2gwd-audio"></span>';
+  badge.innerHTML = '<span class="w2gwd-dot w2gwd-ok"></span><span class="w2gwd-label">…</span>';
 
   const panel = document.createElement('div');
   panel.id = 'w2gwd-panel';
@@ -308,7 +230,6 @@
     <div class="w2gwd-row"><span>Open for</span><span data-k="uptime"></span></div>
     <div class="w2gwd-row"><span>Page elements</span><span data-k="dom"></span></div>
     <div class="w2gwd-row"><span>Main-thread lag</span><span data-k="lag"></span></div>
-    <div class="w2gwd-row"><span>YouTube</span><span data-k="audio"></span></div>
     <div class="w2gwd-status" data-k="status"></div>
     <div class="w2gwd-actions"></div>`;
   const pActions = panel.querySelector('.w2gwd-actions');
@@ -323,29 +244,6 @@
 
   badge.addEventListener('click', () => { panel.hidden = !panel.hidden; badge.classList.toggle('w2gwd-open', !panel.hidden); placeUI(); renderStats(); });
   panel.querySelector('.w2gwd-close').addEventListener('click', () => { panel.hidden = true; badge.classList.remove('w2gwd-open'); });
-
-  // ---------------- Audio-only toggle ----------------
-  const audioChip = badge.querySelector('.w2gwd-audio');
-  function renderAudio() {
-    const on = audioOn();
-    audioChip.textContent = on ? '🎧 Audio only' : '🎧';
-    audioChip.classList.toggle('w2gwd-on', on);
-    audioChip.title = on
-      ? 'Audio only is ON: YouTube plays at 144p behind the thumbnail (saves bandwidth, CPU and memory). Click to bring the video back.'
-      : 'Audio only is OFF. Click to hide YouTube video and drop it to 144p.';
-  }
-  function toggleAudio() {
-    const on = !audioOn();
-    GM_setValue(GM_AUDIO, on);
-    renderAudio(); renderStats();
-    if (on) {
-      toast({ title: 'Audio only on', body: 'YouTube now plays at the lowest quality with the thumbnail instead of the picture: almost no video bandwidth or decoding.', autoHideMs: 5000 });
-    } else {
-      toast({ title: 'Audio only off', body: 'Video is back at normal quality (the picture sharpens as it buffers).', autoHideMs: 5000 });
-    }
-  }
-  audioChip.addEventListener('click', (e) => { e.stopPropagation(); toggleAudio(); });
-  renderAudio();
 
   let corner = localStorage.getItem(LS_CORNER) || CFG.defaultCorner;
   function placeUI() {
@@ -407,7 +305,6 @@
     field('uptime').textContent = uptimeLimitOn ? `${fmtH(uptimeH())} / ${CFG.maxUptimeHours} h` : fmtH(uptimeH());
     field('dom').textContent = domCount().toLocaleString();
     field('lag').textContent = document.visibilityState === 'visible' ? `${Math.round(lagEma)} ms` : 'tab hidden';
-    field('audio').textContent = audioOn() ? 'Audio only' : 'Video';
     field('status').textContent = statusText();
     snoozeBtn.textContent = Date.now() < snoozeUntil ? 'Resume' : `Snooze ${CFG.snoozeMin} min`;
   }
@@ -635,7 +532,6 @@
       placeUI();
     });
     GM_registerMenuCommand('Reload room now (keep chat draft)', () => doReload());
-    GM_registerMenuCommand('Audio only on / off', () => toggleAudio());
     GM_registerMenuCommand(`Snooze / resume auto-reload`, () => {
       toggleSnooze();
       toast({

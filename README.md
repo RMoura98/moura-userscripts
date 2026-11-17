@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![MyAnimeList](https://www.google.com/s2/favicons?sz=12&domain=myanimelist.net) MAL Seasonal Tab Opener](#mal-seasonal-tab-opener) | Opens every anime in the home page seasonal widget in background tabs | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mal-seasonal-tab-opener.user.js) | 2026-11-17 |
 | ✅ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt → Sonarr / Radarr / Jellyfin](#trakt--sonarr--radarr--jellyfin) | Follow, monitor and search in Sonarr/Radarr from Trakt, plus a Jellyfin tile in "Where to Watch" | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js) | 2026-11-17 |
 | ✅ | [![Claude](https://www.google.com/s2/favicons?sz=12&domain=claude.ai) Claude.ai login email autofill](#claudeai-login-email-autofill) | Prefills your email on the Claude.ai login page (email set from the Tampermonkey menu) | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js) | 2026-11-17 |
 | ✅ | [![Allianz Care](https://www.google.com/s2/favicons?sz=12&domain=allianzcare.com) Allianz Care timeout redirect](#allianz-care-timeout-redirect) | Skips the MyHealth session-timeout login page and goes back to the home page | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/allianz-timeout-redirect.user.js) | 2026-11-17 |
@@ -79,3 +80,9 @@ Connects Trakt show and movie pages (`app.trakt.tv`) to your own media stack. No
 Nothing personal is stored in the script: set the Sonarr, Radarr and Jellyfin URLs and API keys from the Tampermonkey menu (or the **Settings…** item in the dropdown). Failed requests are logged to the console under `[Trakt-arr]`, with keys masked.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js)
+
+## MAL Seasonal Tab Opener
+
+Adds an **Open All Tabs** link next to "View More" in the seasonal anime widget on the MyAnimeList home page. One click opens every anime in that widget in background tabs.
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mal-seasonal-tab-opener.user.js)

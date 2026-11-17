@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         W2G Watchdog – memory guard, live stats & safe auto-reload
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=w2g.tv
 // @namespace    https://github.com/RMoura98/moura-userscripts
-// @version      1.2.0
+// @author       @RMoura98
+// @version      2026-11-17
 // @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner.
 // @match        https://w2g.tv/*
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
 // @updateURL    https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // @downloadURL  https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
+// @description  Display multiple rows of TV shows on the Trakt dashboard by hiding clutter and increasing row count
 // ==/UserScript==
 
 (function () {

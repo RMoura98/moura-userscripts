@@ -1,19 +1,116 @@
 // ==UserScript==
-// @name         W2G Watchdog – memory guard, live stats & safe auto-reload
+// @name         W2G Watchdog – memory guard, live stats, audio-only & safe auto-reload
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=w2g.tv
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @author       @RMoura98
-// @version      2026-11-17
-// @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner.
+// @version      2026-11-17.1
+// @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner, and can play YouTube videos audio-only.
 // @match        https://w2g.tv/*
+// @match        https://www.youtube.com/embed/*
+// @match        https://www.youtube-nocookie.com/embed/*
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_addValueChangeListener
 // @updateURL    https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // @downloadURL  https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // ==/UserScript==
 
 (function () {
   'use strict';
+
+  const GM_AUDIO = 'audioOnly'; // shared between the W2G page and the YouTube player frame (default: on)
+  const audioOn = () => GM_getValue(GM_AUDIO, true) !== false;
+
+  // ######################################################################
+  // AUDIO ONLY — runs inside the YouTube player frame embedded in a W2G room
+  // Same idea as the "Audio Only for YouTube" extension: find the audio-only
+  // stream YouTube requests, point the <video> at it, and show the thumbnail.
+  // ######################################################################
+  if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
+    const inW2G = () => {
+      const anc = location.ancestorOrigins ? [...location.ancestorOrigins] : [];
+      return anc.some((o) => /(^|\.)w2g\.tv$/.test(new URL(o).hostname)) ||
+        /w2g\.tv/.test(document.referrer) ||
+        /w2g\.tv/.test(new URLSearchParams(location.search).get('origin') || '');
+    };
+    if (window === window.top || !inW2G()) return;
+
+    let lastAudio = null;   // { url, at }
+    let blobSrc = '';       // the player's own (MSE) src we last saw
+    let blobSeenAt = 0;
+
+    // Audio-only stream URL: mime=audio/*, minus the byte-range bits so it plays as one file
+    const audioUrlFrom = (raw) => {
+      try {
+        const u = new URL(raw);
+        if (!/\.googlevideo\.com$/.test(u.hostname) || u.pathname !== '/videoplayback') return null;
+        if (!/^audio\//.test(u.searchParams.get('mime') || '')) return null;
+        ['range', 'rn', 'rbuf', 'ump', 'srfvp'].forEach((k) => u.searchParams.delete(k));
+        return u.toString();
+      } catch (_) { return null; }
+    };
+
+    try {
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          const url = audioUrlFrom(e.name);
+          if (url) lastAudio = { url, at: Date.now() };
+        }
+      }).observe({ type: 'resource', buffered: true });
+    } catch (_) {}
+
+    const currentVideoId = () => {
+      const link = document.querySelector('.ytp-title-link[href*="v="]');
+      const m = (link && link.href.match(/[?&]v=([\w-]{11})/)) || location.pathname.match(/\/embed\/([\w-]{11})/);
+      return m ? m[1] : '';
+    };
+
+    const showThumbnail = (video) => {
+      const player = video.closest('.html5-video-player');
+      const id = currentVideoId();
+      video.style.width = '1px';
+      video.style.height = '1px';
+      if (player && id) {
+        player.style.backgroundColor = '#000';
+        player.style.backgroundSize = 'contain';
+        player.style.backgroundPosition = 'center';
+        player.style.backgroundRepeat = 'no-repeat';
+        player.style.backgroundImage = `url(https://i.ytimg.com/vi/${id}/hqdefault.jpg)`;
+      }
+    };
+
+    const tick = () => {
+      if (!audioOn()) return;
+      const video = document.querySelector('video');
+      if (!video) return;
+      const src = video.currentSrc || video.src || '';
+      if (src.startsWith('blob:')) {
+        if (src !== blobSrc) { blobSrc = src; blobSeenAt = Date.now(); }
+        // Only use an audio URL requested for this load (not a leftover from the previous video)
+        if (lastAudio && lastAudio.at >= blobSeenAt - 1000) {
+          const t = video.currentTime;
+          const wasPaused = video.paused;
+          try {
+            video.src = lastAudio.url;
+            video.addEventListener('loadedmetadata', () => {
+              try { video.currentTime = t; } catch (_) {}
+              if (!wasPaused) video.play().catch(() => {});
+            }, { once: true });
+          } catch (_) {}
+        }
+      }
+      showThumbnail(video);
+    };
+    setInterval(tick, 1000);
+    GM_addValueChangeListener(GM_AUDIO, () => tick()); // turning it on applies live; off is handled by reloading the room
+    return;
+  }
+
+  // ######################################################################
+  // W2G ROOM
+  // ######################################################################
 
   // Only run inside a room
   if (!/\/room\b/.test(location.pathname)) return;
@@ -24,7 +121,7 @@
     statsEveryMs: 2_000,           // how often the badge refreshes (only while the tab is visible)
     warnHeapMB: 500,               // badge turns yellow + one-time heads-up (JS heap; Task Manager shows more than this)
     reloadHeapMB: 800,             // start the reload flow (~roughly 1 GB+ in Chrome's Task Manager)
-    maxUptimeHours: 4,             // reload after this long regardless (also covers Firefox, which has no memory API)
+    maxUptimeHours: 0,             // 0 = off (trust memory). Set e.g. 4 to also reload after this long (useful in Firefox, which has no memory API)
     lagReloadMs: 250,              // avg main-thread lag that counts as "sluggish"
     lagSustainMin: 2,              // ...if sustained this many minutes
     idleBeforeReloadSec: 20,       // wait until no mouse/keyboard input for this long
@@ -64,6 +161,7 @@
   const heapMB = () =>
     performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
   const uptimeH = () => (performance.now() - startedAt) / 3_600_000;
+  const uptimeLimitOn = CFG.maxUptimeHours > 0;
   const allEls = document.getElementsByTagName('*'); // live collection, cheap .length
   const domCount = () => allEls.length;
   const fmtMB = (mb) => (mb === null ? '—' : mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb} MB`);
@@ -150,6 +248,12 @@
     .w2gwd-ok   { background: rgb(34,197,94); }
     .w2gwd-warn { background: rgb(253,189,0); }
     .w2gwd-bad  { background: rgb(235,54,87); }
+    #w2gwd-badge .w2gwd-audio {
+      margin-left: 2px; padding: 0 6px; border-radius: 4px; line-height: 18px;
+      border-left: 1px solid rgb(58,71,89); color: rgba(255,255,255,.55);
+    }
+    #w2gwd-badge .w2gwd-audio.w2gwd-on { background: rgb(42,104,194); color: #fff; border-left-color: transparent; }
+    #w2gwd-badge .w2gwd-audio:hover { color: #fff; }
 
     /* Panel */
     #w2gwd-panel {
@@ -215,7 +319,7 @@
   const badge = document.createElement('div');
   badge.id = 'w2gwd-badge';
   badge.title = 'W2G Watchdog – click for details';
-  badge.innerHTML = '<span class="w2gwd-dot w2gwd-ok"></span><span class="w2gwd-label">…</span>';
+  badge.innerHTML = '<span class="w2gwd-dot w2gwd-ok"></span><span class="w2gwd-label">…</span><span class="w2gwd-audio"></span>';
 
   const panel = document.createElement('div');
   panel.id = 'w2gwd-panel';
@@ -229,6 +333,7 @@
     <div class="w2gwd-row"><span>Open for</span><span data-k="uptime"></span></div>
     <div class="w2gwd-row"><span>Page elements</span><span data-k="dom"></span></div>
     <div class="w2gwd-row"><span>Main-thread lag</span><span data-k="lag"></span></div>
+    <div class="w2gwd-row"><span>YouTube</span><span data-k="audio"></span></div>
     <div class="w2gwd-status" data-k="status"></div>
     <div class="w2gwd-actions"></div>`;
   const pActions = panel.querySelector('.w2gwd-actions');
@@ -244,6 +349,34 @@
   badge.addEventListener('click', () => { panel.hidden = !panel.hidden; badge.classList.toggle('w2gwd-open', !panel.hidden); placeUI(); renderStats(); });
   panel.querySelector('.w2gwd-close').addEventListener('click', () => { panel.hidden = true; badge.classList.remove('w2gwd-open'); });
 
+  // ---------------- Audio-only toggle ----------------
+  const audioChip = badge.querySelector('.w2gwd-audio');
+  function renderAudio() {
+    const on = audioOn();
+    audioChip.textContent = on ? '🎧 Audio only' : '🎧';
+    audioChip.classList.toggle('w2gwd-on', on);
+    audioChip.title = on
+      ? 'Audio only is ON: YouTube plays just the audio track (saves bandwidth, CPU and memory). Click to bring the video back.'
+      : 'Audio only is OFF. Click to play just the audio track of YouTube videos.';
+  }
+  function toggleAudio() {
+    const on = !audioOn();
+    GM_setValue(GM_AUDIO, on);
+    renderAudio(); renderStats();
+    if (on) {
+      toast({ title: 'Audio only on', body: 'YouTube videos now play just the audio track, with the thumbnail instead of the picture.', autoHideMs: 5000 });
+    } else {
+      toast({
+        title: 'Audio only off',
+        body: 'The video comes back after the room reloads. Your chat draft is kept.',
+        actions: [{ label: 'Later', onClick: closeToast }, { label: 'Reload now', primary: true, onClick: () => doReload() }],
+        autoHideMs: 15_000,
+      });
+    }
+  }
+  audioChip.addEventListener('click', (e) => { e.stopPropagation(); toggleAudio(); });
+  renderAudio();
+
   let corner = localStorage.getItem(LS_CORNER) || CFG.defaultCorner;
   function placeUI() {
     const [v, h] = corner.split('-');
@@ -258,8 +391,8 @@
   function level() {
     const h = heapMB();
     const up = uptimeH();
-    if (disconnectedSince || (h !== null && h >= CFG.reloadHeapMB) || up >= CFG.maxUptimeHours || laggySince) return 'bad';
-    if ((h !== null && h >= CFG.warnHeapMB) || up >= CFG.maxUptimeHours * 0.75 || lagEma > CFG.lagReloadMs / 2) return 'warn';
+    if (disconnectedSince || (h !== null && h >= CFG.reloadHeapMB) || (uptimeLimitOn && up >= CFG.maxUptimeHours) || laggySince) return 'bad';
+    if ((h !== null && h >= CFG.warnHeapMB) || (uptimeLimitOn && up >= CFG.maxUptimeHours * 0.75) || lagEma > CFG.lagReloadMs / 2) return 'warn';
     return 'ok';
   }
 
@@ -275,7 +408,7 @@
     const h = heapMB();
     const parts = [];
     if (h !== null) parts.push(`${fmtMB(CFG.reloadHeapMB)} memory`);
-    parts.push(`${CFG.maxUptimeHours} h open`);
+    if (uptimeLimitOn) parts.push(`${CFG.maxUptimeHours} h open`);
     parts.push(`${CFG.lagSustainMin} min of lag`);
     let s = `Auto-reloads at ${parts.join(', ')} — only when you're idle. Also recovers if the room disconnects.`;
     const g = growthMBPerHour();
@@ -301,9 +434,10 @@
     memBar.className = `w2gwd-${lv}`;
     const g = growthMBPerHour();
     field('growth').textContent = g === null ? 'measuring…' : `${g > 0 ? '+' : ''}${g} MB/h`;
-    field('uptime').textContent = `${fmtH(uptimeH())} / ${CFG.maxUptimeHours} h`;
+    field('uptime').textContent = uptimeLimitOn ? `${fmtH(uptimeH())} / ${CFG.maxUptimeHours} h` : fmtH(uptimeH());
     field('dom').textContent = domCount().toLocaleString();
     field('lag').textContent = document.visibilityState === 'visible' ? `${Math.round(lagEma)} ms` : 'tab hidden';
+    field('audio').textContent = audioOn() ? 'Audio only' : 'Video';
     field('status').textContent = statusText();
     snoozeBtn.textContent = Date.now() < snoozeUntil ? 'Resume' : `Snooze ${CFG.snoozeMin} min`;
   }
@@ -474,7 +608,7 @@
     if (flowKind === 'disconnect' || disconnectedSince) return; // connection watchdog handles this
     const h = heapMB();
     if (h !== null && h >= CFG.reloadHeapMB) return startReloadFlow(`Memory has grown to ${fmtMB(h)}.`);
-    if (uptimeH() >= CFG.maxUptimeHours) return startReloadFlow(`The room has been open ${fmtH(uptimeH())}.`);
+    if (uptimeLimitOn && uptimeH() >= CFG.maxUptimeHours) return startReloadFlow(`The room has been open ${fmtH(uptimeH())}.`);
     if (laggySince && Date.now() - laggySince > CFG.lagSustainMin * 60_000)
       return startReloadFlow('The page has been lagging for a few minutes.');
     if (h !== null && h >= CFG.warnHeapMB && !warned && !flowActive) {
@@ -531,6 +665,7 @@
       placeUI();
     });
     GM_registerMenuCommand('Reload room now (keep chat draft)', () => doReload());
+    GM_registerMenuCommand('Audio only on / off', () => toggleAudio());
     GM_registerMenuCommand(`Snooze / resume auto-reload`, () => {
       toggleSnooze();
       toast({

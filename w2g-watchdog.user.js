@@ -10,7 +10,6 @@
 // @grant        GM_registerMenuCommand
 // @updateURL    https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
 // @downloadURL  https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js
-// @description  Display multiple rows of TV shows on the Trakt dashboard by hiding clutter and increasing row count
 // ==/UserScript==
 
 (function () {

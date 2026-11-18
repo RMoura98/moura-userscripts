@@ -3,8 +3,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=w2g.tv
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @author       @RMoura98
-// @version      2026-11-17.1
-// @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner.
+// @version      2026-11-18
+// @description  Shows live memory/lag/connection stats for Watch2Gether rooms and reloads the room at a safe moment (idle, not typing) with a cancelable countdown, keeping your chat draft. Also recovers rooms stuck on the "disconnected" spinner or the "room does not exist" error.
 // @match        https://w2g.tv/*
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
@@ -34,6 +34,8 @@
     disconnectMaxWaitSec: 300,     // cap for the retry back-off
     disconnectCountdownSec: 5,     // short countdown for disconnect reloads (room is unusable anyway)
     disconnectSnoozeMin: 2,        // "Not now" on a disconnect reload postpones by this much
+    missingCountdownSec: 5,        // countdown before reloading on W2G's "room does not exist" modal (doubles per recent retry)
+    missingMaxReloads: 5,          // give up after this many "does not exist" reloads within 10 min (room is really gone)
     defaultCorner: 'bottom-left',  // badge position: bottom-left | bottom-right | top-left | top-right
   };
 
@@ -41,6 +43,7 @@
   const SS_NOTE  = 'w2gWatchdog:reloadedNote';
   const SS_REASON = 'w2gWatchdog:reloadReason';
   const SS_DISC = 'w2gWatchdog:disconnectReloads';
+  const SS_MISSING = 'w2gWatchdog:missingRoomReloads';
   const LS_CORNER = 'w2gWatchdog:corner';
   const LS_HIDDEN = 'w2gWatchdog:badgeHidden';
   const CORNERS = ['bottom-left', 'bottom-right', 'top-right', 'top-left'];
@@ -49,7 +52,7 @@
   let snoozeUntil = 0;
   let warned = false;
   let flowActive = false;
-  let flowKind = '';              // '' | 'normal' | 'disconnect'
+  let flowKind = '';              // '' | 'normal' | 'disconnect' | 'missing'
   let flowState = '';             // human-readable status of the reload flow
   let waitTimer = null;
   let activeCountdown = null;
@@ -58,6 +61,8 @@
   let lagEma = 0;
   let disconnectedSince = 0;
   let discSnoozeUntil = 0;
+  let missingSnoozeUntil = 0;
+  let missingGaveUp = false;
   const heapSamples = [];         // [timeMs, MB] for growth rate
 
   // ---------------- Helpers ----------------
@@ -105,6 +110,20 @@
       return JSON.parse(sessionStorage.getItem(SS_DISC) || '[]').filter((t) => now - t < 10 * 60_000);
     } catch (_) { return []; }
   };
+  // W2G's info modal (#alert-modal in #site-dimmer): "This Watch2gether room does not exist." — often a transient
+  // server hiccup on persistent rooms, fixed by a reload.
+  const isRoomMissing = () => {
+    const m = document.getElementById('alert-modal');
+    if (!m || !/does not exist/i.test(m.textContent)) return false;
+    return m.getClientRects().length > 0 && getComputedStyle(m).visibility !== 'hidden';
+  };
+  const recentMissingReloads = () => {
+    try {
+      const now = Date.now();
+      return JSON.parse(sessionStorage.getItem(SS_MISSING) || '[]').filter((t) => now - t < 10 * 60_000);
+    } catch (_) { return []; }
+  };
+
   const discThresholdMs = () =>
     Math.min(CFG.disconnectReloadSec * 1000 * 2 ** recentDiscReloads().length, CFG.disconnectMaxWaitSec * 1000);
 
@@ -348,6 +367,7 @@
       sessionStorage.setItem(SS_NOTE, statsLine());
       sessionStorage.setItem(SS_REASON, kind);
       if (kind === 'disconnect') sessionStorage.setItem(SS_DISC, JSON.stringify([...recentDiscReloads(), Date.now()]));
+      if (kind === 'missing') sessionStorage.setItem(SS_MISSING, JSON.stringify([...recentMissingReloads(), Date.now()]));
     } catch (_) {}
     location.reload();
   }
@@ -393,7 +413,9 @@
     flowState = `${reason} Reload countdown running.`;
     const msg = () => `${reason} Reloading in ${left}s — the room will resync automatically.`;
     const el = toast({
-      title: kind === 'disconnect' ? 'Room lost its connection' : 'Refreshing room to keep it smooth',
+      title: kind === 'disconnect' ? 'Room lost its connection'
+        : kind === 'missing' ? 'W2G says the room does not exist'
+        : 'Refreshing room to keep it smooth',
       body: msg(),
       meta: statsLine(),
       progress: 1,
@@ -429,6 +451,7 @@
 
   // ---------------- Connection watchdog (stuck "not connected" spinner) ----------------
   function checkConnection() {
+    if (flowKind === 'missing') return; // "room does not exist" reload already pending
     if (!isDisconnected()) {
       if (disconnectedSince) {
         disconnectedSince = 0;
@@ -458,6 +481,39 @@
   }
   setInterval(checkConnection, 2000);
 
+  // ---------------- "Room does not exist" modal ----------------
+  function checkMissingRoom() {
+    if (!isRoomMissing() || flowKind === 'missing') return;
+    if (Date.now() < missingSnoozeUntil || !navigator.onLine) return;
+    const n = recentMissingReloads().length;
+    if (n >= CFG.missingMaxReloads) {
+      if (!missingGaveUp) {
+        missingGaveUp = true;
+        toast({
+          title: 'W2G Watchdog',
+          body: `Reloaded ${n} times but W2G still says the room does not exist — it's probably really gone. Stopped retrying.`,
+          autoHideMs: 10_000,
+        });
+      }
+      return;
+    }
+    resetFlow(); // overrides any pending memory/disconnect flow
+    if (document.visibilityState === 'hidden') { doReload('missing'); return; }
+    flowActive = true;
+    flowKind = 'missing';
+    countdown('W2G showed "This room does not exist".', {
+      seconds: Math.min(CFG.missingCountdownSec * 2 ** n, 60),
+      cancelOnInput: false,
+      abortIf: () => !isRoomMissing(), // closing the modal cancels
+      kind: 'missing',
+      notNowLabel: 'Not now (2 min)',
+      onNotNow: () => { missingSnoozeUntil = Date.now() + 2 * 60_000; },
+    });
+    renderStats();
+  }
+  setInterval(checkMissingRoom, 2000);
+  checkMissingRoom();
+
   // ---------------- Lag monitor (only while visible; hidden tabs are throttled) ----------------
   let expected = performance.now() + 1000;
   setInterval(() => {
@@ -472,7 +528,7 @@
 
   // ---------------- Main check ----------------
   function check() {
-    if (flowKind === 'disconnect' || disconnectedSince) return; // connection watchdog handles this
+    if (flowKind === 'disconnect' || flowKind === 'missing' || disconnectedSince) return; // other watchdogs handle this
     const h = heapMB();
     if (h !== null && h >= CFG.reloadHeapMB) return startReloadFlow(`Memory has grown to ${fmtMB(h)}.`);
     if (uptimeLimitOn && uptimeH() >= CFG.maxUptimeHours) return startReloadFlow(`The room has been open ${fmtH(uptimeH())}.`);
@@ -512,11 +568,14 @@
     }
     if (note) {
       const disc = reason === 'disconnect';
+      const missing = reason === 'missing';
       setTimeout(() => toast({
-        title: disc ? 'Room reconnected' : 'Room refreshed',
+        title: disc ? 'Room reconnected' : missing ? 'Room reloaded' : 'Room refreshed',
         body: disc
           ? `The room had lost its connection, so it was reloaded.${draft ? ' Your chat draft was restored.' : ''}`
-          : draft ? 'Your chat draft was restored.' : 'Everything should feel snappy again.',
+          : missing
+            ? `W2G said the room didn't exist, so it was reloaded.${draft ? ' Your chat draft was restored.' : ''}`
+            : draft ? 'Your chat draft was restored.' : 'Everything should feel snappy again.',
         meta: `Before: ${note}`,
         autoHideMs: 8000,
       }), 2500);

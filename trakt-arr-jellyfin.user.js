@@ -1,11 +1,12 @@
 // ==UserScript==
-// @name         Trakt → Sonarr / Radarr / Jellyfin – manage your library from Trakt
+// @name         Trakt & MAL → Sonarr / Radarr / Jellyfin – manage your library from Trakt and MyAnimeList
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=trakt.tv
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @author       @RMoura98
-// @version      2026-11-17.1
-// @description  Adds a Sonarr/Radarr action button to Trakt show and movie pages and a Jellyfin tile in "Where to Watch", and refreshes the Home page every hour.
+// @version      2026-11-18
+// @description  Adds Sonarr/Radarr follow, monitor and search controls plus a Jellyfin link to Trakt show/movie pages and MyAnimeList anime pages, and refreshes Trakt's Home page every hour.
 // @match        https://app.trakt.tv/*
+// @match        https://myanimelist.net/anime/*
 // @run-at       document-idle
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -14,6 +15,8 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
 // @grant        GM_addStyle
+// @connect      raw.githubusercontent.com
+// @connect      arm.haglund.dev
 // @connect      *
 // @updateURL    https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js
 // @downloadURL  https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js
@@ -22,9 +25,9 @@
 (function () {
     'use strict';
 
-    const VERSION = '2026-11-17.1';
+    const VERSION = '2026-11-18';
 
-    // One-time cleanup of storage left over from the old MyAnimeList / Trakt-API versions
+    // One-time cleanup of storage left over from older versions (the MAL id map now lives in 'animeMap')
     ['fribbMap', 'fribbMap2', 'traktIds', 'traktClientId'].forEach(k => {
         if (GM_getValue(k, null) !== null) GM_setValue(k, null);
     });
@@ -81,16 +84,16 @@
             })
         );
         menuIds.push(GM_registerMenuCommand('↻ Refresh caches', () => {
-            ['jfIndex_Series', 'jfIndex_Movie', 'arrLookup'].forEach(k => GM_setValue(k, null));
+            ['jfIndex_Series', 'jfIndex_Movie', 'arrLookup', 'animeMap'].forEach(k => GM_setValue(k, null));
             resetCaches();
             onSettingsChanged();
         }));
     };
 
     // ---------------- HTTP + failure logging ----------------
-    // Failed requests are logged to the console (F12 → Console, filter "[Trakt-arr]").
+    // Failed requests are logged to the console (F12 → Console, filter "[arr-jellyfin]").
     // Secrets are masked: only the last 4 chars of keys/tokens are shown.
-    const LOG = '[Trakt-arr]';
+    const LOG = '[arr-jellyfin]';
     const mask = v => (typeof v === 'string' && v.length > 4 ? `••••${v.slice(-4)}` : '••••');
     const redactHeaders = h => {
         const out = {};
@@ -290,7 +293,7 @@
         ]).then(([profiles, roots, langs]) => ({ profiles: profiles || [], roots: roots || [], langs }))
           .catch(err => { delete optionsCache[app.name]; throw err; }));
 
-    const addToLibrary = async (app, ids, { qualityProfileId, rootFolderPath, search }) => {
+    const addToLibrary = async (app, ids, { qualityProfileId, rootFolderPath, search, seriesType = 'standard' }) => {
         if (app.isMovie) {
             const lookup = await arr(app, 'GET', `/movie/lookup/tmdb?tmdbId=${ids.tmdb}`);
             if (!lookup) throw new Error('Movie not found in Radarr lookup');
@@ -307,7 +310,7 @@
             await arr(app, 'POST', '/series', {
                 ...lookup, qualityProfileId, rootFolderPath,
                 ...(Array.isArray(langs) && langs.length ? { languageProfileId: langs[0].id } : {}),
-                monitored: true, seasonFolder: true, seriesType: 'standard',
+                monitored: true, seasonFolder: true, seriesType,
                 addOptions: { monitor: 'all', searchForMissingEpisodes: search, searchForCutoffUnmetEpisodes: false },
             });
         }
@@ -335,7 +338,7 @@
     // Jellyfin 10.11+ only accepts the "Authorization: MediaBrowser Token=…" scheme.
     const jfConfigured = () => !!(base('jellyfinUrl') && get('jellyfinApiKey'));
     const jfAuth = () =>
-        `MediaBrowser Client="Trakt Userscript", Device="Browser", DeviceId="trakt-userscript", Version="${VERSION}", Token="${get('jellyfinApiKey')}"`;
+        `MediaBrowser Client="Trakt/MAL Userscript", Device="Browser", DeviceId="trakt-userscript", Version="${VERSION}", Token="${get('jellyfinApiKey')}"`;
 
     const jf = path =>
         request('GET', `${base('jellyfinUrl')}${path}`, {
@@ -349,26 +352,30 @@
     const jfServerId = () =>
         (jfServerIdPromise ||= jf('/System/Info/Public').then(d => d?.Id || '').catch(() => ''));
 
-    // Matches by provider id when we have one; otherwise by exact (normalised) name + year.
+    // Matches by provider id first. If that fails (or there's no id), falls back to an exact
+    // (normalised) name match, guarded by year: libraries using other metadata (e.g. AniDB for
+    // anime) often have a different TVDB id or none at all.
     const jfFindItem = async (isMovie, ids, nameHints, year = null) => {
         const type = isMovie ? 'Movie' : 'Series';
         const provKey = isMovie ? 'Tmdb' : 'Tvdb';
         const want = String((isMovie ? ids.tmdb : ids.tvdb) || '');
         const hints = [...new Set(nameHints.filter(Boolean))];
-        const q = 'Recursive=true&Fields=ProviderIds&EnableImages=false&EnableUserData=false';
+        const q = 'Recursive=true&Fields=ProviderIds,ProductionYear&EnableImages=false&EnableUserData=false';
+        const byId = i => want && String(i.ProviderIds?.[provKey] || '') === want;
         const byName = i =>
             hints.some(h => norm(h) === norm(i.Name)) &&
             (!year || !i.ProductionYear || Math.abs(i.ProductionYear - year) <= 1);
-        const match = items => (items || []).find(i =>
-            want ? String(i.ProviderIds?.[provKey] || '') === want : byName(i));
 
-        // 1) quick name search
+        // 1) quick name search, matched by provider id
+        const seen = [];
         for (const term of hints) {
             const r = await jf(`/Items?${q}&IncludeItemTypes=${type}&searchTerm=${encodeURIComponent(term)}&Limit=50`);
-            const hit = match(r?.Items);
+            const items = r?.Items || [];
+            const hit = items.find(byId);
             if (hit) return hit;
+            seen.push(...items);
         }
-        // 2) full scan by provider id, cached 6h
+        // 2) full scan by provider id (handles differing titles), cached 6h
         if (want) {
             const cacheKey = `jfIndex_${type}`;
             let idx = GM_getValue(cacheKey, null);
@@ -384,7 +391,8 @@
             }
             if (idx.map[want]) return { Id: idx.map[want] };
         }
-        return null;
+        // 3) name (+year) fallback
+        return seen.find(byName) || null;
     };
 
     // -> null (not configured) | { found:false } | { found:true, url, label, short } | { error }
@@ -437,521 +445,873 @@
     // ######################################################################
     // TRAKT (app.trakt.tv — SvelteKit SPA, so we poll for route/DOM changes)
     // ######################################################################
-    GM_addStyle(`
-      /* --- action bar button --- */
-      .trakt-summary-actions-bar.mtj-widened { width: calc(var(--ni-280, 280px) + 46px) !important; }
-      .mtj-action { position: relative; display: inline-flex; }
-      .mtj-action button { position: relative; }
-      .mtj-action button[data-busy="1"] { opacity: .55; }
-      .mtj-action .mtj-dot {
-        position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%;
-        box-shadow: 0 0 0 2px var(--color-tooltip-background, #fdfcfe); display: none;
-      }
-      .mtj-action[data-state="following"] .mtj-dot { display: block; background: #2e9d5b; }
-      .mtj-action[data-state="paused"] .mtj-dot { display: block; background: #e8892b; }
-      .mtj-action[data-state="error"] .mtj-dot { display: block; background: #d64545; }
+    const initTrakt = () => {
+        GM_addStyle(`
+          /* --- action bar button --- */
+          .trakt-summary-actions-bar.mtj-widened { width: calc(var(--ni-280, 280px) + 46px) !important; }
+          .mtj-action { position: relative; display: inline-flex; }
+          .mtj-action button { position: relative; }
+          .mtj-action button[data-busy="1"] { opacity: .55; }
+          .mtj-action .mtj-dot {
+            position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%;
+            box-shadow: 0 0 0 2px var(--color-tooltip-background, #fdfcfe); display: none;
+          }
+          .mtj-action[data-state="following"] .mtj-dot { display: block; background: #2e9d5b; }
+          .mtj-action[data-state="paused"] .mtj-dot { display: block; background: #e8892b; }
+          .mtj-action[data-state="error"] .mtj-dot { display: block; background: #d64545; }
 
-      /* --- dropdown, modelled on Trakt's popup menu --- */
-      .mtj-pop {
-        position: fixed; z-index: 2147483000; width: 290px; box-sizing: border-box;
-        background: var(--color-tooltip-background, #fdfcfe);
-        color: var(--color-text-primary, #2b2730);
-        border-radius: 16px; overflow: hidden;
-        box-shadow: 0 6px 24px rgba(32, 30, 35, .4);
-        font-family: inherit; font-size: 14px;
-        animation: mtj-in .14s ease-out;
-      }
-      @keyframes mtj-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-      .mtj-pop ul { list-style: none; margin: 0; padding: 0; }
-      .mtj-pop li + li { border-top: 1px solid rgba(127, 120, 135, .18); }
-      .mtj-head { padding: 14px 16px 12px; }
-      .mtj-head-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
-      .mtj-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
-      .mtj-pill[data-k="following"] { background: rgba(46, 157, 91, .15); color: #2e9d5b; }
-      .mtj-pill[data-k="paused"]    { background: rgba(232, 137, 43, .16); color: #c46f17; }
-      .mtj-pill[data-k="none"]      { background: rgba(127, 120, 135, .16); color: var(--color-text-secondary, #6b6570); }
-      .mtj-pill[data-k="error"]     { background: rgba(214, 69, 69, .14); color: #d64545; }
-      .mtj-sub { margin-top: 4px; font-size: 12px; color: var(--color-text-secondary, #6b6570); line-height: 1.45; }
-      .mtj-item {
-        display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer;
-        color: inherit; text-decoration: none; font-weight: 600; text-transform: none;
-        background: none; border: 0; width: 100%; text-align: left; font: inherit; font-weight: 600;
-      }
-      .mtj-item:hover { background: rgba(127, 120, 135, .10); }
-      .mtj-item[aria-disabled="true"] { opacity: .5; pointer-events: none; }
-      .mtj-item svg { flex-shrink: 0; }
-      .mtj-form { padding: 12px 16px 14px; display: grid; gap: 8px; }
-      .mtj-form label.mtj-field { display: grid; gap: 4px; font-size: 12px; color: var(--color-text-secondary, #6b6570); }
-      .mtj-form select {
-        font: inherit; font-size: 13px; color: var(--color-text-primary, #2b2730);
-        background: transparent; border: 1px solid rgba(127, 120, 135, .35); border-radius: 10px; padding: 7px 10px;
-      }
-      .mtj-form .mtj-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-      .mtj-primary {
-        justify-self: start; border: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 13px;
-        padding: 9px 18px; border-radius: 999px; color: #fff;
-        background: var(--color-brand-violet, #7c4ddb);
-      }
-      .mtj-primary:disabled { opacity: .6; cursor: default; }
-      .mtj-msg { font-size: 12px; color: #d64545; }
-      .mtj-msg.ok { color: #2e9d5b; }
+          /* --- dropdown, modelled on Trakt's popup menu --- */
+          .mtj-pop {
+            position: fixed; z-index: 2147483000; width: 290px; box-sizing: border-box;
+            background: var(--color-tooltip-background, #fdfcfe);
+            color: var(--color-text-primary, #2b2730);
+            border-radius: 16px; overflow: hidden;
+            box-shadow: 0 6px 24px rgba(32, 30, 35, .4);
+            font-family: inherit; font-size: 14px;
+            animation: mtj-in .14s ease-out;
+          }
+          @keyframes mtj-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+          .mtj-pop ul { list-style: none; margin: 0; padding: 0; }
+          .mtj-pop li + li { border-top: 1px solid rgba(127, 120, 135, .18); }
+          .mtj-head { padding: 14px 16px 12px; }
+          .mtj-head-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+          .mtj-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+          .mtj-pill[data-k="following"] { background: rgba(46, 157, 91, .15); color: #2e9d5b; }
+          .mtj-pill[data-k="paused"]    { background: rgba(232, 137, 43, .16); color: #c46f17; }
+          .mtj-pill[data-k="none"]      { background: rgba(127, 120, 135, .16); color: var(--color-text-secondary, #6b6570); }
+          .mtj-pill[data-k="error"]     { background: rgba(214, 69, 69, .14); color: #d64545; }
+          .mtj-sub { margin-top: 4px; font-size: 12px; color: var(--color-text-secondary, #6b6570); line-height: 1.45; }
+          .mtj-item {
+            display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer;
+            color: inherit; text-decoration: none; font-weight: 600; text-transform: none;
+            background: none; border: 0; width: 100%; text-align: left; font: inherit; font-weight: 600;
+          }
+          .mtj-item:hover { background: rgba(127, 120, 135, .10); }
+          .mtj-item[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+          .mtj-item svg { flex-shrink: 0; }
+          .mtj-form { padding: 12px 16px 14px; display: grid; gap: 8px; }
+          .mtj-form label.mtj-field { display: grid; gap: 4px; font-size: 12px; color: var(--color-text-secondary, #6b6570); }
+          .mtj-form select {
+            font: inherit; font-size: 13px; color: var(--color-text-primary, #2b2730);
+            background: transparent; border: 1px solid rgba(127, 120, 135, .35); border-radius: 10px; padding: 7px 10px;
+          }
+          .mtj-form .mtj-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+          .mtj-primary {
+            justify-self: start; border: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 13px;
+            padding: 9px 18px; border-radius: 999px; color: #fff;
+            background: var(--color-brand-violet, #7c4ddb);
+          }
+          .mtj-primary:disabled { opacity: .6; cursor: default; }
+          .mtj-msg { font-size: 12px; color: #d64545; }
+          .mtj-msg.ok { color: #2e9d5b; }
 
-      /* --- Where to Watch tile, modelled on Trakt's streaming tiles --- */
-      .mtj-wtw { flex-shrink: 0; }
-      .mtj-wtw a { color: var(--color-text-secondary, #4a4550); text-decoration: none; }
-      .mtj-wtw-card {
-        width: var(--width-where-to-watch-item, 96px); height: var(--height-where-to-watch-item, 96px);
-        box-sizing: border-box; padding: 8px; border-radius: 12px;
-        background: var(--color-card-background, #fdfcfe);
-        box-shadow: var(--shadow-base, 1px 1px 4px 2px rgba(32, 30, 35, .1));
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        transition: transform .15s ease;
-      }
-      .mtj-wtw a:hover .mtj-wtw-card { transform: translateY(-2px); }
-      .mtj-wtw-logo { width: 60px; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
-      .mtj-wtw-logo b { font-size: 12px; letter-spacing: .2px; color: var(--color-text-primary, #2b2730); }
-      .mtj-wtw-card p { margin: 0; font-size: 14px; white-space: nowrap; }
-      .section-list-empty-state.mtj-has-tile { justify-content: flex-start !important; }
-      .section-list-empty-state.mtj-has-tile > p { display: none; }
-    `);
+          /* --- Where to Watch tile, modelled on Trakt's streaming tiles --- */
+          .mtj-wtw { flex-shrink: 0; }
+          .mtj-wtw a { color: var(--color-text-secondary, #4a4550); text-decoration: none; }
+          .mtj-wtw-card {
+            width: var(--width-where-to-watch-item, 96px); height: var(--height-where-to-watch-item, 96px);
+            box-sizing: border-box; padding: 8px; border-radius: 12px;
+            background: var(--color-card-background, #fdfcfe);
+            box-shadow: var(--shadow-base, 1px 1px 4px 2px rgba(32, 30, 35, .1));
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: transform .15s ease;
+          }
+          .mtj-wtw a:hover .mtj-wtw-card { transform: translateY(-2px); }
+          .mtj-wtw-logo { width: 60px; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+          .mtj-wtw-logo b { font-size: 12px; letter-spacing: .2px; color: var(--color-text-primary, #2b2730); }
+          .mtj-wtw-card p { margin: 0; font-size: 14px; white-space: nowrap; }
+          .section-list-empty-state.mtj-has-tile { justify-content: flex-start !important; }
+          .section-list-empty-state.mtj-has-tile > p { display: none; }
+        `);
 
-    let ctx = null;      // { type, slug, season, key }
-    let st = {};         // state for the current route
-    let gen = 0;         // guards against stale async results
-    let pop = null;      // open dropdown element
+        let ctx = null;      // { type, slug, season, key }
+        let st = {};         // state for the current route
+        let gen = 0;         // guards against stale async results
+        let pop = null;      // open dropdown element
 
-    // ---------- routing ----------
-    const parseRoute = () => {
-        const m = location.pathname.match(/^\/(shows|movies)\/([^/?#]+)(?:\/seasons\/(\d+))?/);
-        if (!m) return null;
-        const type = m[1] === 'movies' ? 'movie' : 'show';
-        let season = null;
-        if (type === 'show') {
-            if (m[3] != null) season = Number(m[3]);
-            else {
-                const trig = document.querySelector('.trakt-select-trigger[aria-label="Seasons"]');
-                const t = trig?.textContent.trim().match(/^(\d+)\s*-/);
-                const q = new URLSearchParams(location.search).get('season');
-                season = t ? Number(t[1]) : q != null ? Number(q) : null;
+        // ---------- routing ----------
+        const parseRoute = () => {
+            const m = location.pathname.match(/^\/(shows|movies)\/([^/?#]+)(?:\/seasons\/(\d+))?/);
+            if (!m) return null;
+            const type = m[1] === 'movies' ? 'movie' : 'show';
+            let season = null;
+            if (type === 'show') {
+                if (m[3] != null) season = Number(m[3]);
+                else {
+                    const trig = document.querySelector('.trakt-select-trigger[aria-label="Seasons"]');
+                    const t = trig?.textContent.trim().match(/^(\d+)\s*-/);
+                    const q = new URLSearchParams(location.search).get('season');
+                    season = t ? Number(t[1]) : q != null ? Number(q) : null;
+                }
             }
-        }
-        return { type, slug: m[2], season, key: `${type}:${m[2]}:${season}` };
+            return { type, slug: m[2], season, key: `${type}:${m[2]}:${season}` };
+        };
+
+        const isMovie = () => ctx?.type === 'movie';
+        const app = () => appFor(isMovie());
+
+        // ---------- title + year from the page ----------
+        // Trakt puts schema.org JSON-LD in the page. After SPA navigation it can briefly be the old
+        // page's, so we only accept it when its url matches the current slug; else fall back to the slug.
+        const pageMeta = async c => {
+            const prefix = `/${c.type === 'movie' ? 'movies' : 'shows'}/${c.slug}`;
+            const fromSlug = () => {
+                const m = c.slug.match(/^(.*?)(?:-(\d{4}))?$/);
+                return { title: m[1].replace(/-/g, ' '), year: m[2] ? Number(m[2]) : null };
+            };
+            for (let i = 0; i < 16; i++) {
+                for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+                    try {
+                        const j = JSON.parse(s.textContent);
+                        for (const x of Array.isArray(j) ? j : [j]) {
+                            if (!x?.name || !x.url) continue;
+                            if (!new URL(x.url, location.origin).pathname.startsWith(prefix)) continue;
+                            const y = parseInt(x.datePublished || x.startDate, 10);
+                            return { title: x.name, year: Number.isFinite(y) ? y : fromSlug().year };
+                        }
+                    } catch {}
+                }
+                await sleep(250);
+            }
+            return fromSlug();
+        };
+
+        // -> { title, year, tvdb, tmdb, lookupError? }
+        const resolveIds = async (c, a) => {
+            const meta = await pageMeta(c);
+            const none = { title: meta.title, year: meta.year, tvdb: null, tmdb: null };
+            if (!arrConfigured(a)) return none; // Jellyfin can still match by name + year
+
+            const key = `${c.type}:${c.slug}`;
+            const cached = cacheGet('arrLookup', key, 30 * 24 * 3600 * 1000);
+            if (cached) return { ...none, ...cached };
+            try {
+                const hit = await arrLookupIds(a, meta.title, meta.year);
+                if (!hit) return none;
+                cacheSet('arrLookup', key, hit);
+                return { ...none, ...hit };
+            } catch (err) {
+                return { ...none, lookupError: err.message };
+            }
+        };
+
+        // ---------- data loading ----------
+        const load = async () => {
+            const my = ++gen;
+            const c = ctx;
+            st = { phase: 'loading' };
+            render();
+
+            const movie = c.type === 'movie';
+            const a = appFor(movie);
+            const info = await resolveIds(c, a);
+            if (my !== gen) return;
+
+            st = {
+                phase: 'ready',
+                title: info.title,
+                year: info.year,
+                ids: { tvdb: info.tvdb, tmdb: info.tmdb, season: c.season },
+                arr: arrConfigured(a) ? (info.lookupError ? { error: info.lookupError } : 'loading') : null,
+                jf: jfConfigured() ? 'loading' : null,
+            };
+            render();
+
+            const ids = st.ids;
+            const set = (k, v) => { if (my === gen) { st[k] = v; render(); } };
+
+            if (st.arr === 'loading') getArrStatus(a, ids).then(v => set('arr', v));
+            getJellyfinStatus(movie, ids, [info.title], info.year).then(v => set('jf', v));
+        };
+
+        const reloadArr = async () => {
+            const my = gen;
+            st.arr = 'loading'; render();
+            const v = await getArrStatus(app(), st.ids);
+            if (my === gen) { st.arr = v; render(); }
+        };
+
+        // ---------- injection: action bar button ----------
+        const ensureAction = () => {
+            const bar = document.querySelector('.trakt-summary-actions-bar');
+            if (!bar) return null;
+            let wrap = bar.querySelector('.mtj-action');
+            if (!wrap) {
+                wrap = document.createElement('div');
+                wrap.className = 'mtj-action';
+                wrap.innerHTML = `
+              <button type="button" data-button-root="true" class="trakt-action-button trakt-button-link"
+                      data-color="default" data-variant="primary" data-size="normal" data-style="ghost">
+                ${svg(I.arr)}<span class="mtj-dot"></span>
+              </button>`;
+                const more = bar.querySelector('.trakt-media-actions-popup-button');
+                if (more) more.before(wrap); else bar.appendChild(wrap);
+                bar.classList.add('mtj-widened');
+                wrap.querySelector('button').addEventListener('click', e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    pop ? closePop() : openPop(wrap);
+                });
+            }
+            return wrap;
+        };
+
+        const arrState = () => {
+            const s = st.arr;
+            if (s?.error) return 'error';
+            if (s && s.found) return s.monitored ? 'following' : 'paused';
+            return 'none';
+        };
+
+        const renderAction = () => {
+            const wrap = ensureAction();
+            if (!wrap) return;
+            const a = app();
+            const state = arrState();
+            const label =
+                !base(a.urlKey) ? `Set up ${a.name}` :
+                state === 'following' ? `Following in ${a.name}` :
+                state === 'paused' ? `Paused in ${a.name}` :
+                state === 'error' ? `${a.name}: error` :
+                st.arr === 'loading' || st.phase === 'loading' ? `Checking ${a.name}…` : `Not in ${a.name}`;
+            wrap.dataset.state = state;
+            const btn = wrap.querySelector('button');
+            btn.setAttribute('aria-label', label);
+            btn.title = label;
+            btn.dataset.busy = st.arr === 'loading' || st.phase === 'loading' ? '1' : '0';
+        };
+
+        // ---------- dropdown ----------
+        const closePop = () => { pop?.remove(); pop = null; };
+
+        const positionPop = anchor => {
+            if (!pop) return;
+            const r = anchor.getBoundingClientRect();
+            pop.style.top = `${Math.round(r.bottom + 10)}px`;
+            pop.style.left = `${Math.round(Math.max(12, Math.min(r.left - 120, window.innerWidth - 302)))}px`;
+        };
+
+        const openPop = anchor => {
+            pop = document.createElement('div');
+            pop.className = 'mtj-pop';
+            pop.addEventListener('click', e => e.stopPropagation());
+            document.body.appendChild(pop);
+            pop._anchor = anchor;
+            renderPop();
+            positionPop(anchor);
+        };
+
+        document.addEventListener('click', () => closePop());
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
+        window.addEventListener('scroll', () => pop && positionPop(pop._anchor), true);
+        window.addEventListener('resize', () => pop && positionPop(pop._anchor));
+
+        const item = (act, icon, text, disabled = false) =>
+            `<li><button type="button" class="mtj-item" data-act="${act}" ${disabled ? 'aria-disabled="true"' : ''}>${svg(icon)}<span>${esc(text)}</span></button></li>`;
+
+        const renderPop = () => {
+            if (!pop) return;
+            const a = app();
+            const s = st.arr;
+            const season = ctx?.season;
+            const state = arrState();
+            const pill = { following: 'Following', paused: 'Paused', none: 'Not following', error: 'Error' }[state];
+
+            let head = '';
+            const items = [];
+
+            if (st.phase === 'loading') {
+                head = `<div class="mtj-head-title">${a.name}</div><div class="mtj-sub">Checking…</div>`;
+            } else {
+                // ----- Sonarr/Radarr header -----
+                const subs = [];
+                if (!base(a.urlKey)) subs.push(`${a.name} isn't set up yet.`);
+                else if (!get(a.apiKey)) subs.push('Add an API key to see status.');
+                else if (s === 'loading') subs.push('Checking…');
+                else if (s?.error) subs.push(esc(s.error));
+                else if (s?.noMapping) subs.push(`Couldn't match “${esc(st.title)}” in ${a.name}.`);
+                else if (s?.found) subs.push(esc(s.rows.map(([l, v]) => (l === 'Series' || l === 'Size' ? v : `${l}: ${v}`)).join(' · ')));
+                else if (s && !s.found) subs.push(`Not in your ${a.name} library.`);
+
+                // ----- Jellyfin line -----
+                if (st.jf === 'loading') subs.push('Jellyfin: checking…');
+                else if (st.jf?.found) subs.push(`Jellyfin: ${esc(st.jf.label)}`);
+                else if (st.jf?.error) subs.push(`Jellyfin: ${esc(st.jf.error)}`);
+                else if (st.jf) subs.push('Jellyfin: not in library');
+                else subs.push('Jellyfin: not set up');
+
+                head = `<div class="mtj-head-title">${a.name}${arrConfigured(a) && s !== 'loading' ? ` <span class="mtj-pill" data-k="${state}">${pill}</span>` : ''}</div>
+                    <div class="mtj-sub">${subs.join('<br>')}</div>`;
+
+                if (st.jf?.found) items.push(item('jellyfin', I.play, `Play on Jellyfin${st.jf.short && st.jf.short !== 'Series' ? ` · ${st.jf.short}` : ''}`));
+
+                if (!base(a.urlKey)) {
+                    items.push(item('settings', I.settings, `Set up ${a.name}…`));
+                } else if (s?.found) {
+                    items.push(item('open', I.open, `Open in ${a.name}`));
+                    items.push(s.monitored
+                        ? item('toggleSeries', I.minus, a.isMovie ? 'Unfollow movie' : 'Unfollow series')
+                        : item('toggleSeries', I.plus, a.isMovie ? 'Follow movie' : 'Follow series'));
+                    if (!a.isMovie && s.season) {
+                        items.push(s.season.monitored
+                            ? item('toggleSeason', I.eyeOff, `Stop monitoring season ${season}`)
+                            : item('toggleSeason', I.eye, `Monitor season ${season}`));
+                    }
+                    items.push(item('search', I.search,
+                        a.isMovie ? 'Search for movie' : s.season ? `Search season ${season}` : 'Search all missing'));
+                } else {
+                    items.push(item('open', I.open, s && !s.found ? `Add in ${a.name}` : `Search in ${a.name}`));
+                }
+                items.push(item('settings', I.settings, 'Settings…'));
+            }
+
+            const showForm = st.phase === 'ready' && s && s !== 'loading' && !s.error && !s.noMapping && !s.found;
+
+            pop.innerHTML = `
+            <div class="mtj-head">${head}</div>
+            ${showForm ? '<div class="mtj-form"><div class="mtj-sub">Loading options…</div></div>' : ''}
+            <ul>${items.join('')}</ul>
+            <div class="mtj-msg-wrap"></div>`;
+
+            pop.querySelectorAll('.mtj-item').forEach(b => b.addEventListener('click', e => onAction(b.dataset.act, b, e)));
+            if (showForm) renderForm(pop.querySelector('.mtj-form'));
+        };
+
+        const renderForm = async el => {
+            const a = app();
+            let opts;
+            try { opts = await loadAddOptions(a); }
+            catch (err) { el.innerHTML = `<div class="mtj-msg">${esc(err.message)}</div>`; return; }
+            if (!el.isConnected) return;
+            if (!opts.profiles.length || !opts.roots.length) {
+                el.innerHTML = `<div class="mtj-sub">Set up a quality profile and root folder in ${a.name} first.</div>`;
+                return;
+            }
+            const prefs = getAddPrefs(a);
+            el.innerHTML = `
+            <label class="mtj-field">Quality profile
+              <select class="mtj-profile">${opts.profiles.map(p =>
+                  `<option value="${p.id}" ${String(p.id) === prefs.profile ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+            </label>
+            <label class="mtj-field">Root folder
+              <select class="mtj-root">${opts.roots.map(r =>
+                  `<option value="${esc(r.path)}" ${r.path === prefs.root ? 'selected' : ''}>${esc(r.path)}</option>`).join('')}</select>
+            </label>
+            <label class="mtj-check"><input type="checkbox" class="mtj-search" ${prefs.search ? 'checked' : ''}> Search for ${a.isMovie ? 'it' : 'episodes'} now</label>
+            <button type="button" class="mtj-primary">Follow in ${a.name}</button>
+            <div class="mtj-msg"></div>`;
+
+            const btn = el.querySelector('.mtj-primary');
+            const msg = el.querySelector('.mtj-msg');
+            btn.addEventListener('click', async () => {
+                const o = {
+                    qualityProfileId: Number(el.querySelector('.mtj-profile').value),
+                    rootFolderPath: el.querySelector('.mtj-root').value,
+                    search: el.querySelector('.mtj-search').checked,
+                };
+                saveAddPrefs(a, o);
+                btn.disabled = true;
+                btn.textContent = 'Adding…';
+                msg.textContent = '';
+                try {
+                    await addToLibrary(a, st.ids, o);
+                    await reloadArr();
+                } catch (err) {
+                    btn.disabled = false;
+                    btn.textContent = `Follow in ${a.name}`;
+                    msg.textContent = err.message;
+                }
+            });
+        };
+
+        const flash = (text, ok) => {
+            const w = pop?.querySelector('.mtj-msg-wrap');
+            if (w) w.innerHTML = `<div class="mtj-msg ${ok ? 'ok' : ''}" style="padding:0 16px 12px">${esc(text)}</div>`;
+        };
+
+        const onAction = async (act, btn, e) => {
+            const a = app();
+            const s = st.arr;
+            const busy = () => { btn.setAttribute('aria-disabled', 'true'); btn.querySelector('span').textContent = 'Working…'; };
+            try {
+                if (act === 'settings') {
+                    closePop();
+                    editSettings([a.urlKey, a.apiKey, 'jellyfinUrl', 'jellyfinApiKey']);
+                } else if (act === 'jellyfin') {
+                    closePop(); openTab(st.jf.url, e);
+                } else if (act === 'open') {
+                    closePop(); openTab(s?.found ? s.url : addPageUrl(a, st.ids || {}, st.title), e);
+                } else if (act === 'toggleSeries') {
+                    busy(); await setMonitored(a, s.item, !s.monitored); await reloadArr();
+                } else if (act === 'toggleSeason') {
+                    busy(); await setSeasonMonitored(a, s.item, ctx.season, !s.season.monitored); await reloadArr();
+                } else if (act === 'search') {
+                    busy(); await runSearch(a, s.item, s.season ? ctx.season : null);
+                    renderPop(); flash(`Search started in ${a.name}.`, true);
+                }
+            } catch (err) {
+                renderPop(); flash(err.message, false);
+            }
+        };
+
+        // ---------- injection: Jellyfin tile in "Where to Watch" ----------
+        const findWtwSection = () =>
+            [...document.querySelectorAll('section.section-list-container')]
+                .find(sec => /Where to Watch/i.test(sec.querySelector('.trakt-list-header')?.textContent || ''));
+
+        const renderTile = () => {
+            const found = st.phase === 'ready' && st.jf && st.jf !== 'loading' && st.jf.found;
+            const existing = document.querySelector('.mtj-wtw');
+            if (!found) {
+                if (existing) {
+                    existing.closest('.section-list-empty-state')?.classList.remove('mtj-has-tile');
+                    existing.remove();
+                }
+                return;
+            }
+            const sec = findWtwSection();
+            if (!sec) return;
+
+            let tile = sec.querySelector('.mtj-wtw');
+            if (!tile) {
+                tile = document.createElement('div');
+                tile.className = 'mtj-wtw';
+                tile.innerHTML = `
+              <a target="_blank" rel="noopener">
+                <div class="mtj-wtw-card">
+                  <div class="mtj-wtw-logo">
+                    <svg viewBox="0 0 24 24" width="28" height="28">
+                      <defs><linearGradient id="mtjg" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#9b5cd6"/><stop offset="1" stop-color="#1fa3dc"/></linearGradient></defs>
+                      <circle cx="12" cy="12" r="11" fill="url(#mtjg)"/><path d="M9.5 7.5v9l7-4.5z" fill="#fff"/>
+                    </svg>
+                    <b>Jellyfin</b>
+                  </div>
+                  <p></p>
+                </div>
+              </a>`;
+                const list = sec.querySelector('.trakt-list-item-container');
+                const empty = sec.querySelector('.section-list-empty-state');
+                if (list) list.prepend(tile);
+                else if (empty) { empty.classList.add('mtj-has-tile'); empty.prepend(tile); }
+                else return;
+            }
+            const a = tile.querySelector('a');
+            if (a.href !== st.jf.url) a.href = st.jf.url;
+            const label = st.jf.short === 'Series' || st.jf.short === 'Movie' ? 'Library' : st.jf.short;
+            const p = tile.querySelector('p');
+            if (p.textContent !== label) p.textContent = label;
+            a.title = `Open in Jellyfin — ${st.jf.label}`;
+        };
+
+        // ---------- render ----------
+        // inject(): idempotent, safe to run every tick (re-adds what Svelte replaced)
+        // render(): after a state change — also refreshes an open dropdown
+        const inject = () => {
+            if (!ctx) return;
+            renderAction();
+            renderTile();
+        };
+        const render = () => {
+            inject();
+            if (pop) renderPop();
+        };
+
+        const cleanup = () => {
+            closePop();
+            document.querySelectorAll('.mtj-action, .mtj-wtw').forEach(n => n.remove());
+            document.querySelectorAll('.mtj-widened').forEach(n => n.classList.remove('mtj-widened'));
+            document.querySelectorAll('.mtj-has-tile').forEach(n => n.classList.remove('mtj-has-tile'));
+        };
+
+        onSettingsChanged = () => { if (ctx) load(); };
+
+        // Poll for SPA navigation, season changes and Svelte re-renders (cheap)
+        const tick = () => {
+            const r = parseRoute();
+            if (!r) { if (ctx) { cleanup(); ctx = null; gen++; } return; }
+            if (!ctx || r.key !== ctx.key) {
+                if (!ctx || r.slug !== ctx.slug || r.type !== ctx.type) cleanup();
+                closePop();
+                ctx = r;
+                load();
+                return;
+            }
+            inject(); // re-inject anything Svelte replaced (doesn't touch an open dropdown)
+        };
+
+        // ######################################################################
+        // HOME AUTO-REFRESH (replaces the old "Trakt Autorefresher" for trakt.tv/dashboard,
+        // which now redirects to app.trakt.tv/home)
+        // Reloads Home after it has been open this long, unless you're typing or our dropdown is open.
+        // ######################################################################
+        const HOME_REFRESH_MINUTES = 60;
+        let homeSince = 0;
+        setInterval(() => {
+            if (!/^\/home\/?$/.test(location.pathname)) { homeSince = 0; return; }
+            homeSince ||= Date.now();
+            if (Date.now() - homeSince < HOME_REFRESH_MINUTES * 60_000) return;
+            const a = document.activeElement;
+            const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+            if (typing || pop) return; // try again on the next check
+            location.reload();
+        }, 30_000);
+
+        setInterval(tick, 700);
+        tick();
     };
 
-    const isMovie = () => ctx?.type === 'movie';
-    const app = () => appFor(isMovie());
+    // ######################################################################
+    // MYANIMELIST (myanimelist.net/anime/<id>) — "Library" section in MAL's sidebar
+    // ######################################################################
 
-    // ---------- title + year from the page ----------
-    // Trakt puts schema.org JSON-LD in the page. After SPA navigation it can briefly be the old
-    // page's, so we only accept it when its url matches the current slug; else fall back to the slug.
-    const pageMeta = async c => {
-        const prefix = `/${c.type === 'movie' ? 'movies' : 'shows'}/${c.slug}`;
-        const fromSlug = () => {
-            const m = c.slug.match(/^(.*?)(?:-(\d{4}))?$/);
-            return { title: m[1].replace(/-/g, ' '), year: m[2] ? Number(m[2]) : null };
+    // MAL → TVDB id + TVDB season / TMDB movie id.
+    // Primary: Fribb/anime-lists (has season numbers), cached 7 days. Fallback: ARM API (ids only).
+    const FRIBB_URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-mini.json';
+    const loadAnimeMap = async () => {
+        const cached = GM_getValue('animeMap', null);
+        if (cached?.map && Date.now() - cached.ts < 7 * 24 * 3600 * 1000) return cached.map;
+        const list = await request('GET', FRIBB_URL, { timeout: 60000 });
+        const map = {};
+        for (const e of list || []) {
+            if (!e.mal_id) continue;
+            const tvdb = e.tvdb_id || null;
+            const season = e.season?.tvdb ?? null;
+            const tmdbMovie = e.themoviedb_id?.movie ?? (typeof e.themoviedb_id === 'number' ? e.themoviedb_id : null);
+            if (tvdb || tmdbMovie) map[e.mal_id] = [tvdb, season, tmdbMovie];
+        }
+        GM_setValue('animeMap', { ts: Date.now(), map });
+        return map;
+    };
+
+    const animeIds = async malId => {
+        try {
+            const hit = (await loadAnimeMap())[malId];
+            if (hit) return { tvdb: hit[0], season: hit[1], tmdb: hit[2] };
+        } catch {}
+        try {
+            const d = await request('GET', `https://arm.haglund.dev/api/v2/ids?source=myanimelist&id=${malId}`);
+            if (d?.thetvdb || d?.themoviedb) return { tvdb: d.thetvdb || null, season: null, tmdb: d.themoviedb || null };
+        } catch {}
+        return { tvdb: null, season: null, tmdb: null };
+    };
+
+    const initMal = () => {
+        const m = location.pathname.match(/^\/anime\/(\d+)/);
+        if (!m) return;
+        const malId = Number(m[1]);
+        const left = document.querySelector('.leftside');
+        const titleEl = document.querySelector('h1.title-name');
+        if (!left || !titleEl) return;
+
+        const titles = [...new Set([
+            document.querySelector('.title-english')?.textContent.trim(),
+            titleEl.textContent.trim(),
+        ].filter(Boolean))];
+        const infoRow = label => {
+            const el = [...left.querySelectorAll('.spaceit_pad .dark_text')].find(e => e.textContent.trim() === label);
+            return el?.parentElement.textContent.replace(label, '').trim() || '';
         };
-        for (let i = 0; i < 16; i++) {
-            for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+        const isMovie = /^movie$/i.test(infoRow('Type:'));
+        const year = Number((infoRow('Aired:').match(/\d{4}/) || [])[0]) || null;
+        const a = appFor(isMovie);
+
+        // ---------- ids: anime lists first, then Sonarr/Radarr title lookup (cached 30 days) ----------
+        let idsPromise;
+        const getIds = () => (idsPromise ||= (async () => {
+            const ids = await animeIds(malId);
+            if ((isMovie ? ids.tmdb : ids.tvdb) || !arrConfigured(a)) return ids;
+            const key = `mal:${malId}`;
+            const cached = cacheGet('arrLookup', key, 30 * 24 * 3600 * 1000);
+            if (cached) return { ...ids, ...cached };
+            for (const t of titles) {
                 try {
-                    const j = JSON.parse(s.textContent);
-                    for (const x of Array.isArray(j) ? j : [j]) {
-                        if (!x?.name || !x.url) continue;
-                        if (!new URL(x.url, location.origin).pathname.startsWith(prefix)) continue;
-                        const y = parseInt(x.datePublished || x.startDate, 10);
-                        return { title: x.name, year: Number.isFinite(y) ? y : fromSlug().year };
-                    }
+                    const hit = await arrLookupIds(a, t, year);
+                    if (hit) { cacheSet('arrLookup', key, hit); return { ...ids, ...hit }; }
                 } catch {}
             }
-            await sleep(250);
-        }
-        return fromSlug();
-    };
+            return ids;
+        })());
 
-    // -> { title, year, tvdb, tmdb, lookupError? }
-    const resolveIds = async (c, a) => {
-        const meta = await pageMeta(c);
-        const none = { title: meta.title, year: meta.year, tvdb: null, tmdb: null };
-        if (!arrConfigured(a)) return none; // Jellyfin can still match by name + year
+        // ---------- UI, using MAL's own sidebar markup and classes ----------
+        GM_addStyle(`
+          .arr-btn svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 4px; fill: currentColor; }
+          .arr-btn.is-loading { opacity: .7; pointer-events: none; }
+          .arr-h2 .arr-settings { float: right; font-size: 11px; font-weight: normal; }
+          .arr-on   { color: #2e7d32; font-weight: bold; }
+          .arr-off  { color: #e65100; font-weight: bold; }
+          .arr-mute { color: #888; }
+          .arr-action { margin-left: 4px; font-size: 11px; }
+          .arr-action[aria-disabled="true"] { pointer-events: none; opacity: .6; }
+          .arr-form td { padding: 2px 0; vertical-align: middle; }
+          .arr-form select { width: 140px; }
+          .arr-form .arr-label { width: 70px; }
+          .arr-msg { margin-top: 4px; font-size: 11px; }
+          .arr-sub { margin-top: 6px; padding-top: 4px; border-top: 1px dotted #ccc; }
+        `);
 
-        const key = `${c.type}:${c.slug}`;
-        const cached = cacheGet('arrLookup', key, 30 * 24 * 3600 * 1000);
-        if (cached) return { ...none, ...cached };
-        try {
-            const hit = await arrLookupIds(a, meta.title, meta.year);
-            if (!hit) return none;
-            cacheSet('arrLookup', key, hit);
-            return { ...none, ...hit };
-        } catch (err) {
-            return { ...none, lookupError: err.message };
-        }
-    };
+        const ICON_TV   = '<svg viewBox="0 0 24 24"><path d="M21 3H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5v2h8v-2h5a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 14H3V5h18v12z"/></svg>';
+        const ICON_FILM = '<svg viewBox="0 0 24 24"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4h-4z"/></svg>';
+        const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+        const arrIcon = isMovie ? ICON_FILM : ICON_TV;
 
-    // ---------- data loading ----------
-    const load = async () => {
-        const my = ++gen;
-        const c = ctx;
-        st = { phase: 'loading' };
-        render();
+        const row = (label, valueHtml) =>
+            `<div class="spaceit_pad"><span class="dark_text">${esc(label)}:</span> ${valueHtml}</div>`;
+        const link = (act, text) => `<a href="#" class="arr-action" data-act="${act}">${esc(text)}</a>`;
 
-        const movie = c.type === 'movie';
-        const a = appFor(movie);
-        const info = await resolveIds(c, a);
-        if (my !== gen) return;
-
-        st = {
-            phase: 'ready',
-            title: info.title,
-            year: info.year,
-            ids: { tvdb: info.tvdb, tmdb: info.tmdb, season: c.season },
-            arr: arrConfigured(a) ? (info.lookupError ? { error: info.lookupError } : 'loading') : null,
-            jf: jfConfigured() ? 'loading' : null,
+        const makeButton = () => {
+            const wrap = document.createElement('div');
+            wrap.className = 'di-b mb8 ac';
+            const btn = document.createElement('a');
+            btn.href = '#';
+            btn.className = 'left-info-block-broadcast-button arr-btn';
+            wrap.appendChild(btn);
+            return { wrap, a: btn };
         };
-        render();
 
-        const ids = st.ids;
-        const set = (k, v) => { if (my === gen) { st[k] = v; render(); } };
+        // MAL's own "Watch Episodes" button is taken over to play on Jellyfin when the
+        // item is in your library. If the page has no such button, we add our own.
+        const malWatchBtn = left.querySelector('.left-info-block-broadcast-button');
+        const malWatchHtml = malWatchBtn?.innerHTML;
+        const jfBtn = makeButton();
+        const arrBtn = makeButton();
+        jfBtn.wrap.style.setProperty('display', 'none', 'important'); // MAL's .di-b uses !important
+        const watchBlock = malWatchBtn?.closest('div');
+        if (watchBlock) watchBlock.after(arrBtn.wrap);
+        else left.querySelector('h2')?.before(jfBtn.wrap, arrBtn.wrap);
 
-        if (st.arr === 'loading') getArrStatus(a, ids).then(v => set('arr', v));
-        getJellyfinStatus(movie, ids, [info.title], info.year).then(v => set('jf', v));
-    };
-
-    const reloadArr = async () => {
-        const my = gen;
-        st.arr = 'loading'; render();
-        const v = await getArrStatus(app(), st.ids);
-        if (my === gen) { st.arr = v; render(); }
-    };
-
-    // ---------- injection: action bar button ----------
-    const ensureAction = () => {
-        const bar = document.querySelector('.trakt-summary-actions-bar');
-        if (!bar) return null;
-        let wrap = bar.querySelector('.mtj-action');
-        if (!wrap) {
-            wrap = document.createElement('div');
-            wrap.className = 'mtj-action';
-            wrap.innerHTML = `
-          <button type="button" data-button-root="true" class="trakt-action-button trakt-button-link"
-                  data-color="default" data-variant="primary" data-size="normal" data-style="ghost">
-            ${svg(I.arr)}<span class="mtj-dot"></span>
-          </button>`;
-            const more = bar.querySelector('.trakt-media-actions-popup-button');
-            if (more) more.before(wrap); else bar.appendChild(wrap);
-            bar.classList.add('mtj-widened');
-            wrap.querySelector('button').addEventListener('click', e => {
-                e.preventDefault();
-                e.stopPropagation();
-                pop ? closePop() : openPop(wrap);
-            });
-        }
-        return wrap;
-    };
-
-    const arrState = () => {
-        const s = st.arr;
-        if (s?.error) return 'error';
-        if (s && s.found) return s.monitored ? 'following' : 'paused';
-        return 'none';
-    };
-
-    const renderAction = () => {
-        const wrap = ensureAction();
-        if (!wrap) return;
-        const a = app();
-        const state = arrState();
-        const label =
-            !base(a.urlKey) ? `Set up ${a.name}` :
-            state === 'following' ? `Following in ${a.name}` :
-            state === 'paused' ? `Paused in ${a.name}` :
-            state === 'error' ? `${a.name}: error` :
-            st.arr === 'loading' || st.phase === 'loading' ? `Checking ${a.name}…` : `Not in ${a.name}`;
-        wrap.dataset.state = state;
-        const btn = wrap.querySelector('button');
-        btn.setAttribute('aria-label', label);
-        btn.title = label;
-        btn.dataset.busy = st.arr === 'loading' || st.phase === 'loading' ? '1' : '0';
-    };
-
-    // ---------- dropdown ----------
-    const closePop = () => { pop?.remove(); pop = null; };
-
-    const positionPop = anchor => {
-        if (!pop) return;
-        const r = anchor.getBoundingClientRect();
-        pop.style.top = `${Math.round(r.bottom + 10)}px`;
-        pop.style.left = `${Math.round(Math.max(12, Math.min(r.left - 120, window.innerWidth - 302)))}px`;
-    };
-
-    const openPop = anchor => {
-        pop = document.createElement('div');
-        pop.className = 'mtj-pop';
-        pop.addEventListener('click', e => e.stopPropagation());
-        document.body.appendChild(pop);
-        pop._anchor = anchor;
-        renderPop();
-        positionPop(anchor);
-    };
-
-    document.addEventListener('click', () => closePop());
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); });
-    window.addEventListener('scroll', () => pop && positionPop(pop._anchor), true);
-    window.addEventListener('resize', () => pop && positionPop(pop._anchor));
-
-    const item = (act, icon, text, disabled = false) =>
-        `<li><button type="button" class="mtj-item" data-act="${act}" ${disabled ? 'aria-disabled="true"' : ''}>${svg(icon)}<span>${esc(text)}</span></button></li>`;
-
-    const renderPop = () => {
-        if (!pop) return;
-        const a = app();
-        const s = st.arr;
-        const season = ctx?.season;
-        const state = arrState();
-        const pill = { following: 'Following', paused: 'Paused', none: 'Not following', error: 'Error' }[state];
-
-        let head = '';
-        const items = [];
-
-        if (st.phase === 'loading') {
-            head = `<div class="mtj-head-title">${a.name}</div><div class="mtj-sub">Checking…</div>`;
-        } else {
-            // ----- Sonarr/Radarr header -----
-            const subs = [];
-            if (!base(a.urlKey)) subs.push(`${a.name} isn't set up yet.`);
-            else if (!get(a.apiKey)) subs.push('Add an API key to see status.');
-            else if (s === 'loading') subs.push('Checking…');
-            else if (s?.error) subs.push(esc(s.error));
-            else if (s?.noMapping) subs.push(`Couldn't match “${esc(st.title)}” in ${a.name}.`);
-            else if (s?.found) subs.push(esc(s.rows.map(([l, v]) => (l === 'Series' || l === 'Size' ? v : `${l}: ${v}`)).join(' · ')));
-            else if (s && !s.found) subs.push(`Not in your ${a.name} library.`);
-
-            // ----- Jellyfin line -----
-            if (st.jf === 'loading') subs.push('Jellyfin: checking…');
-            else if (st.jf?.found) subs.push(`Jellyfin: ${esc(st.jf.label)}`);
-            else if (st.jf?.error) subs.push(`Jellyfin: ${esc(st.jf.error)}`);
-            else if (st.jf) subs.push('Jellyfin: not in library');
-            else subs.push('Jellyfin: not set up');
-
-            head = `<div class="mtj-head-title">${a.name}${arrConfigured(a) && s !== 'loading' ? ` <span class="mtj-pill" data-k="${state}">${pill}</span>` : ''}</div>
-                <div class="mtj-sub">${subs.join('<br>')}</div>`;
-
-            if (st.jf?.found) items.push(item('jellyfin', I.play, `Play on Jellyfin${st.jf.short && st.jf.short !== 'Series' ? ` · ${st.jf.short}` : ''}`));
-
-            if (!base(a.urlKey)) {
-                items.push(item('settings', I.settings, `Set up ${a.name}…`));
-            } else if (s?.found) {
-                items.push(item('open', I.open, `Open in ${a.name}`));
-                items.push(s.monitored
-                    ? item('toggleSeries', I.minus, a.isMovie ? 'Unfollow movie' : 'Unfollow series')
-                    : item('toggleSeries', I.plus, a.isMovie ? 'Follow movie' : 'Follow series'));
-                if (!a.isMovie && s.season) {
-                    items.push(s.season.monitored
-                        ? item('toggleSeason', I.eyeOff, `Stop monitoring season ${season}`)
-                        : item('toggleSeason', I.eye, `Monitor season ${season}`));
-                }
-                items.push(item('search', I.search,
-                    a.isMovie ? 'Search for movie' : s.season ? `Search season ${season}` : 'Search all missing'));
+        const setWatchToJellyfin = on => {
+            if (malWatchBtn) {
+                malWatchBtn.innerHTML = on ? `${ICON_PLAY}Watch on Jellyfin` : malWatchHtml;
+                malWatchBtn.classList.toggle('arr-btn', on);
+                malWatchBtn.title = on ? 'Opens in Jellyfin (Ctrl/Cmd-click: background tab)' : '';
             } else {
-                items.push(item('open', I.open, s && !s.found ? `Add in ${a.name}` : `Search in ${a.name}`));
+                jfBtn.a.innerHTML = `${ICON_PLAY}Watch on Jellyfin`;
+                if (on) jfBtn.wrap.style.removeProperty('display');
+                else jfBtn.wrap.style.setProperty('display', 'none', 'important');
             }
-            items.push(item('settings', I.settings, 'Settings…'));
-        }
+        };
 
-        const showForm = st.phase === 'ready' && s && s !== 'loading' && !s.error && !s.noMapping && !s.found;
+        // "Library" section before "Alternative Titles"
+        const section = document.createElement('div');
+        section.innerHTML = `
+          <h2 class="mt8 arr-h2">Library<a href="#" class="arr-settings">Settings</a></h2>
+          <div class="arr-rows"></div>
+          <div class="arr-jf"></div>
+          <br>`;
+        const rowsEl = section.querySelector('.arr-rows');
+        const jfEl = section.querySelector('.arr-jf');
+        const altTitles = [...left.querySelectorAll('h2')].find(h => /Alternative Titles/.test(h.textContent));
+        if (altTitles) altTitles.before(section);
+        else arrBtn.wrap.after(section);
 
-        pop.innerHTML = `
-        <div class="mtj-head">${head}</div>
-        ${showForm ? '<div class="mtj-form"><div class="mtj-sub">Loading options…</div></div>' : ''}
-        <ul>${items.join('')}</ul>
-        <div class="mtj-msg-wrap"></div>`;
+        const openSettings = () => editSettings([a.urlKey, a.apiKey, 'jellyfinUrl', 'jellyfinApiKey']);
+        section.querySelector('.arr-settings').addEventListener('click', e => { e.preventDefault(); openSettings(); });
 
-        pop.querySelectorAll('.mtj-item').forEach(b => b.addEventListener('click', e => onAction(b.dataset.act, b, e)));
-        if (showForm) renderForm(pop.querySelector('.mtj-form'));
-    };
+        const setArrButton = (text, mode) => {
+            arrBtn.a.innerHTML = `${arrIcon}${esc(text)}`;
+            arrBtn.a.dataset.mode = mode; // 'open' | 'add' | 'setup'
+        };
 
-    const renderForm = async el => {
-        const a = app();
-        let opts;
-        try { opts = await loadAddOptions(a); }
-        catch (err) { el.innerHTML = `<div class="mtj-msg">${esc(err.message)}</div>`; return; }
-        if (!el.isConnected) return;
-        if (!opts.profiles.length || !opts.roots.length) {
-            el.innerHTML = `<div class="mtj-sub">Set up a quality profile and root folder in ${a.name} first.</div>`;
-            return;
-        }
-        const prefs = getAddPrefs(a);
-        el.innerHTML = `
-        <label class="mtj-field">Quality profile
-          <select class="mtj-profile">${opts.profiles.map(p =>
-              `<option value="${p.id}" ${String(p.id) === prefs.profile ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
-        </label>
-        <label class="mtj-field">Root folder
-          <select class="mtj-root">${opts.roots.map(r =>
-              `<option value="${esc(r.path)}" ${r.path === prefs.root ? 'selected' : ''}>${esc(r.path)}</option>`).join('')}</select>
-        </label>
-        <label class="mtj-check"><input type="checkbox" class="mtj-search" ${prefs.search ? 'checked' : ''}> Search for ${a.isMovie ? 'it' : 'episodes'} now</label>
-        <button type="button" class="mtj-primary">Follow in ${a.name}</button>
-        <div class="mtj-msg"></div>`;
+        let ids = null;
+        let arrStatus = null;
+        let jfStatus = null;
+        let gen = 0; // guards against stale async results after a settings change
 
-        const btn = el.querySelector('.mtj-primary');
-        const msg = el.querySelector('.mtj-msg');
-        btn.addEventListener('click', async () => {
-            const o = {
-                qualityProfileId: Number(el.querySelector('.mtj-profile').value),
-                rootFolderPath: el.querySelector('.mtj-root').value,
-                search: el.querySelector('.mtj-search').checked,
-            };
-            saveAddPrefs(a, o);
-            btn.disabled = true;
-            btn.textContent = 'Adding…';
-            msg.textContent = '';
+        // ---- Not following: profile / folder / search + Follow ----
+        const renderAddForm = async () => {
+            rowsEl.innerHTML = row(a.name, '<span class="arr-mute">Not following</span>') +
+                '<div class="arr-form-wrap"><span class="arr-mute">Loading options…</span></div>';
+            const wrap = rowsEl.querySelector('.arr-form-wrap');
+
+            let opts;
+            try { opts = await loadAddOptions(a); }
+            catch (err) { wrap.innerHTML = `<span class="arr-off">Error</span> <span class="arr-mute">(${esc(err.message)})</span>`; return; }
+            if (!wrap.isConnected) return;
+
+            if (!opts.profiles.length || !opts.roots.length) {
+                wrap.innerHTML = `<span class="arr-mute">Set up a quality profile and root folder in ${a.name} first.</span>`;
+                return;
+            }
+
+            const prefs = getAddPrefs(a);
+            wrap.innerHTML = `
+              <table class="arr-form" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr><td class="arr-label spaceit">Profile:</td>
+                    <td class="spaceit"><select class="inputtext arr-profile">${opts.profiles.map(p =>
+                        `<option value="${p.id}" ${String(p.id) === prefs.profile ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td></tr>
+                <tr><td class="arr-label spaceit">Folder:</td>
+                    <td class="spaceit"><select class="inputtext arr-root">${opts.roots.map(r =>
+                        `<option value="${esc(r.path)}" ${r.path === prefs.root ? 'selected' : ''}>${esc(r.path)}</option>`).join('')}</select></td></tr>
+                <tr><td class="arr-label spaceit">&nbsp;</td>
+                    <td class="spaceit"><label><input type="checkbox" class="arr-search" ${prefs.search ? 'checked' : ''}> Search now</label></td></tr>
+                <tr><td class="arr-label">&nbsp;</td>
+                    <td><input type="button" class="inputButton btn-middle flat arr-follow" value="Follow"></td></tr>
+              </table>
+              <div class="arr-msg"></div>`;
+
+            const followBtn = wrap.querySelector('.arr-follow');
+            const msg = wrap.querySelector('.arr-msg');
+            followBtn.addEventListener('click', async () => {
+                const o = {
+                    qualityProfileId: Number(wrap.querySelector('.arr-profile').value),
+                    rootFolderPath: wrap.querySelector('.arr-root').value,
+                    search: wrap.querySelector('.arr-search').checked,
+                    seriesType: 'anime',
+                };
+                saveAddPrefs(a, o);
+                followBtn.disabled = true;
+                followBtn.value = 'Adding…';
+                msg.innerHTML = '';
+                try {
+                    await addToLibrary(a, ids, o);
+                    await refreshArr();
+                } catch (err) {
+                    followBtn.disabled = false;
+                    followBtn.value = 'Follow';
+                    msg.innerHTML = `<span class="arr-off">Error:</span> ${esc(err.message)}`;
+                }
+            });
+        };
+
+        // ---- In library: Following / Paused, season monitoring, search ----
+        const renderInLibrary = () => {
+            const s = arrStatus;
+            let html = row(a.name, s.monitored
+                ? `<span class="arr-on">Following</span>${link('toggleSeries', 'Unfollow')}`
+                : `<span class="arr-off">Paused</span>${link('toggleSeries', 'Follow')}`);
+            for (const [l, v] of s.rows) {
+                if (s.season && l === `Season ${s.season.number}`) {
+                    html += row(l, `${s.season.have} / ${s.season.want} eps` +
+                        (s.season.monitored
+                            ? link('toggleSeason', 'Unmonitor')
+                            : ` <span class="arr-mute">(unmonitored)</span>${link('toggleSeason', 'Monitor')}`));
+                } else {
+                    html += row(l, esc(v));
+                }
+            }
+            const searchText = isMovie ? 'Search for movie' : s.season ? `Search season ${s.season.number}` : 'Search all missing';
+            html += `<div class="spaceit_pad"><a href="#" class="arr-action" data-act="search" style="margin-left:0">${esc(searchText)}</a></div>
+                     <div class="arr-msg"></div>`;
+            rowsEl.innerHTML = html;
+        };
+
+        rowsEl.addEventListener('click', async e => {
+            const btn = e.target.closest('.arr-action[data-act]');
+            if (!btn) return;
+            e.preventDefault();
+            const s = arrStatus;
+            btn.setAttribute('aria-disabled', 'true');
+            btn.textContent = 'Saving…';
             try {
-                await addToLibrary(a, st.ids, o);
-                await reloadArr();
+                if (btn.dataset.act === 'toggleSeries') {
+                    await setMonitored(a, s.item, !s.monitored);
+                } else if (btn.dataset.act === 'toggleSeason') {
+                    await setSeasonMonitored(a, s.item, s.season.number, !s.season.monitored);
+                } else if (btn.dataset.act === 'search') {
+                    await runSearch(a, s.item, s.season ? s.season.number : null);
+                    renderInLibrary();
+                    rowsEl.querySelector('.arr-msg').innerHTML = `<span class="arr-on">Search started in ${a.name}.</span>`;
+                    return;
+                }
+                await refreshArr();
             } catch (err) {
-                btn.disabled = false;
-                btn.textContent = `Follow in ${a.name}`;
-                msg.textContent = err.message;
+                renderInLibrary();
+                rowsEl.querySelector('.arr-msg').innerHTML = `<span class="arr-off">Error:</span> ${esc(err.message)}`;
             }
         });
-    };
 
-    const flash = (text, ok) => {
-        const w = pop?.querySelector('.mtj-msg-wrap');
-        if (w) w.innerHTML = `<div class="mtj-msg ${ok ? 'ok' : ''}" style="padding:0 16px 12px">${esc(text)}</div>`;
-    };
+        const refreshArr = async () => {
+            const my = gen;
+            arrStatus = null;
 
-    const onAction = async (act, btn, e) => {
-        const a = app();
-        const s = st.arr;
-        const busy = () => { btn.setAttribute('aria-disabled', 'true'); btn.querySelector('span').textContent = 'Working…'; };
-        try {
-            if (act === 'settings') {
-                closePop();
-                editSettings([a.urlKey, a.apiKey, 'jellyfinUrl', 'jellyfinApiKey']);
-            } else if (act === 'jellyfin') {
-                closePop(); openTab(st.jf.url, e);
-            } else if (act === 'open') {
-                closePop(); openTab(s?.found ? s.url : addPageUrl(a, st.ids || {}, st.title), e);
-            } else if (act === 'toggleSeries') {
-                busy(); await setMonitored(a, s.item, !s.monitored); await reloadArr();
-            } else if (act === 'toggleSeason') {
-                busy(); await setSeasonMonitored(a, s.item, ctx.season, !s.season.monitored); await reloadArr();
-            } else if (act === 'search') {
-                busy(); await runSearch(a, s.item, s.season ? ctx.season : null);
-                renderPop(); flash(`Search started in ${a.name}.`, true);
+            if (!base(a.urlKey)) {
+                setArrButton(`Set up ${a.name}`, 'setup');
+                rowsEl.innerHTML = row(a.name, '<span class="arr-mute">Not set up</span>');
+                return;
             }
-        } catch (err) {
-            renderPop(); flash(err.message, false);
-        }
-    };
-
-    // ---------- injection: Jellyfin tile in "Where to Watch" ----------
-    const findWtwSection = () =>
-        [...document.querySelectorAll('section.section-list-container')]
-            .find(sec => /Where to Watch/i.test(sec.querySelector('.trakt-list-header')?.textContent || ''));
-
-    const renderTile = () => {
-        const found = st.phase === 'ready' && st.jf && st.jf !== 'loading' && st.jf.found;
-        const existing = document.querySelector('.mtj-wtw');
-        if (!found) {
-            if (existing) {
-                existing.closest('.section-list-empty-state')?.classList.remove('mtj-has-tile');
-                existing.remove();
+            if (!get(a.apiKey)) {
+                setArrButton(`Open in ${a.name}`, 'add');
+                rowsEl.innerHTML = row(a.name, '<span class="arr-mute">Add an API key in Settings to see status</span>');
+                return;
             }
-            return;
-        }
-        const sec = findWtwSection();
-        if (!sec) return;
 
-        let tile = sec.querySelector('.mtj-wtw');
-        if (!tile) {
-            tile = document.createElement('div');
-            tile.className = 'mtj-wtw';
-            tile.innerHTML = `
-          <a target="_blank" rel="noopener">
-            <div class="mtj-wtw-card">
-              <div class="mtj-wtw-logo">
-                <svg viewBox="0 0 24 24" width="28" height="28">
-                  <defs><linearGradient id="mtjg" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0" stop-color="#9b5cd6"/><stop offset="1" stop-color="#1fa3dc"/></linearGradient></defs>
-                  <circle cx="12" cy="12" r="11" fill="url(#mtjg)"/><path d="M9.5 7.5v9l7-4.5z" fill="#fff"/>
-                </svg>
-                <b>Jellyfin</b>
-              </div>
-              <p></p>
-            </div>
-          </a>`;
-            const list = sec.querySelector('.trakt-list-item-container');
-            const empty = sec.querySelector('.section-list-empty-state');
-            if (list) list.prepend(tile);
-            else if (empty) { empty.classList.add('mtj-has-tile'); empty.prepend(tile); }
-            else return;
-        }
-        const a = tile.querySelector('a');
-        if (a.href !== st.jf.url) a.href = st.jf.url;
-        const label = st.jf.short === 'Series' || st.jf.short === 'Movie' ? 'Library' : st.jf.short;
-        const p = tile.querySelector('p');
-        if (p.textContent !== label) p.textContent = label;
-        a.title = `Open in Jellyfin — ${st.jf.label}`;
+            setArrButton(`Open in ${a.name}`, 'add');
+            arrBtn.a.classList.add('is-loading');
+            rowsEl.innerHTML = row(a.name, '<span class="arr-mute">Checking…</span>');
+
+            const status = await getArrStatus(a, ids);
+            if (my !== gen) return;
+            arrStatus = status;
+            arrBtn.a.classList.remove('is-loading');
+
+            if (status.error) {
+                rowsEl.innerHTML = row(a.name, `<span class="arr-off">Error</span> <span class="arr-mute">(${esc(status.error)})</span>`);
+            } else if (status.noMapping) {
+                setArrButton(`Search in ${a.name}`, 'add');
+                rowsEl.innerHTML = row(a.name, `<span class="arr-mute">No ${a.idName} match — button searches by title</span>`);
+            } else if (!status.found) {
+                setArrButton(`Add in ${a.name}`, 'add');
+                renderAddForm();
+            } else {
+                setArrButton(`Open in ${a.name}`, 'open');
+                renderInLibrary();
+            }
+        };
+
+        const refreshJellyfin = async () => {
+            const my = gen;
+            jfStatus = null;
+            setWatchToJellyfin(false);
+            const show = html => { jfEl.innerHTML = `<div class="arr-sub">${row('Jellyfin', html)}</div>`; };
+
+            if (!jfConfigured()) return show('<span class="arr-mute">Not set up</span>');
+            show('<span class="arr-mute">Checking…</span>');
+
+            // The Sonarr/Radarr title is usually the series name Jellyfin uses. MAL's air year
+            // belongs to this season, so only use it as a name-match guard for first seasons.
+            const hints = [arrStatus?.item?.title, ...titles];
+            const jfYear = ids.season == null || ids.season === 1 ? year : null;
+            const status = await getJellyfinStatus(isMovie, ids, hints, jfYear);
+            if (my !== gen) return;
+            jfStatus = status;
+
+            if (status?.error) show(`<span class="arr-off">Error</span> <span class="arr-mute">(${esc(status.error)})</span>`);
+            else if (!status?.found) show('<span class="arr-mute">Not in library</span>');
+            else { show(`<span class="arr-on">${esc(status.label)}</span>`); setWatchToJellyfin(true); }
+        };
+
+        const refresh = async () => {
+            gen++;
+            ids = await getIds();
+            await refreshArr();      // first, so Jellyfin can use the Sonarr/Radarr title as a search hint
+            await refreshJellyfin();
+        };
+
+        onSettingsChanged = () => { idsPromise = null; refresh(); };
+
+        arrBtn.a.addEventListener('click', e => {
+            e.preventDefault();
+            if (arrBtn.a.dataset.mode === 'setup') return openSettings();
+            openTab(arrStatus?.found ? arrStatus.url : addPageUrl(a, ids || {}, titles[0]), e);
+        });
+
+        const openJellyfin = e => {
+            if (!jfStatus?.url) return; // not in Jellyfin → let MAL's button behave normally
+            e.preventDefault();
+            e.stopImmediatePropagation(); // block MAL's streaming popup
+            openTab(jfStatus.url, e);
+        };
+        jfBtn.a.addEventListener('click', openJellyfin);
+        malWatchBtn?.addEventListener('click', openJellyfin, true); // capture: run before MAL's handler
+
+        refresh();
     };
-
-    // ---------- render ----------
-    // inject(): idempotent, safe to run every tick (re-adds what Svelte replaced)
-    // render(): after a state change — also refreshes an open dropdown
-    const inject = () => {
-        if (!ctx) return;
-        renderAction();
-        renderTile();
-    };
-    const render = () => {
-        inject();
-        if (pop) renderPop();
-    };
-
-    const cleanup = () => {
-        closePop();
-        document.querySelectorAll('.mtj-action, .mtj-wtw').forEach(n => n.remove());
-        document.querySelectorAll('.mtj-widened').forEach(n => n.classList.remove('mtj-widened'));
-        document.querySelectorAll('.mtj-has-tile').forEach(n => n.classList.remove('mtj-has-tile'));
-    };
-
-    onSettingsChanged = () => { if (ctx) load(); };
-
-    // Poll for SPA navigation, season changes and Svelte re-renders (cheap)
-    const tick = () => {
-        const r = parseRoute();
-        if (!r) { if (ctx) { cleanup(); ctx = null; gen++; } return; }
-        if (!ctx || r.key !== ctx.key) {
-            if (!ctx || r.slug !== ctx.slug || r.type !== ctx.type) cleanup();
-            closePop();
-            ctx = r;
-            load();
-            return;
-        }
-        inject(); // re-inject anything Svelte replaced (doesn't touch an open dropdown)
-    };
-
-    // ######################################################################
-    // HOME AUTO-REFRESH (replaces the old "Trakt Autorefresher" for trakt.tv/dashboard,
-    // which now redirects to app.trakt.tv/home)
-    // Reloads Home after it has been open this long, unless you're typing or our dropdown is open.
-    // ######################################################################
-    const HOME_REFRESH_MINUTES = 60;
-    let homeSince = 0;
-    setInterval(() => {
-        if (!/^\/home\/?$/.test(location.pathname)) { homeSince = 0; return; }
-        homeSince ||= Date.now();
-        if (Date.now() - homeSince < HOME_REFRESH_MINUTES * 60_000) return;
-        const a = document.activeElement;
-        const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
-        if (typing || pop) return; // try again on the next check
-        location.reload();
-    }, 30_000);
 
     // ######################################################################
     // Boot
     // ######################################################################
     buildMenu();
-    setInterval(tick, 700);
-    tick();
+    if (location.hostname === 'app.trakt.tv') initTrakt();
+    else if (location.hostname === 'myanimelist.net') initMal();
 })();

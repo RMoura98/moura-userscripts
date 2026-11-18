@@ -6,7 +6,7 @@
 | ✅ | [![Rails](https://www.google.com/s2/favicons?sz=12&domain=rubyonrails.org) Mini Profiler fade](#mini-profiler-fade) | Dims the rack-mini-profiler badge on localhost:3000 | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js) | 2026-11-17 |
 | ✅ | [![Google Flights](https://www.google.com/s2/favicons?sz=12&domain=flights.google.com) Google Flights price per person](#google-flights-price-per-person) | Hover a total price to see it split per passenger | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js) | 2026-11-17 |
 | ✅ | [![MyAnimeList](https://www.google.com/s2/favicons?sz=12&domain=myanimelist.net) MAL Seasonal Tab Opener](#mal-seasonal-tab-opener) | Opens every anime in the home page seasonal widget in background tabs | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mal-seasonal-tab-opener.user.js) | 2026-11-17 |
-| ✅ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt → Sonarr / Radarr / Jellyfin](#trakt--sonarr--radarr--jellyfin) | Follow, monitor and search in Sonarr/Radarr from Trakt, plus a Jellyfin tile in "Where to Watch" | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js) | 2026-11-17 |
+| ✅ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt & MAL → Sonarr / Radarr / Jellyfin](#trakt--mal--sonarr--radarr--jellyfin) | Follow, monitor and search in Sonarr/Radarr from Trakt and MyAnimeList, plus a Jellyfin link | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js) | 2026-11-18 |
 | ✅ | [![Claude](https://www.google.com/s2/favicons?sz=12&domain=claude.ai) Claude.ai login email autofill](#claudeai-login-email-autofill) | Prefills your email on the Claude.ai login page (email set from the Tampermonkey menu) | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js) | 2026-11-17 |
 | ✅ | [![Allianz Care](https://www.google.com/s2/favicons?sz=12&domain=allianzcare.com) Allianz Care timeout redirect](#allianz-care-timeout-redirect) | Skips the MyHealth session-timeout login page and goes back to the home page | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/allianz-timeout-redirect.user.js) | 2026-11-17 |
 | ✅ | [![W2G](https://www.google.com/s2/favicons?sz=12&domain=w2g.tv) W2G Watchdog](#w2g-watchdog) | Live memory/lag/connection stats for Watch2Gether rooms, plus safe auto-reload | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js) | 2026-11-17 |
@@ -42,7 +42,7 @@ Replaces the chord labels with inline chords.
 
 ## Trakt dashboard multiple rows
 
-> ❌ **Retired.** Trakt's old dashboard (`trakt.tv/dashboard`) now redirects to the new app (`app.trakt.tv/home`), so this script no longer runs. Its hourly auto-refresh lives on in [Trakt → Sonarr / Radarr / Jellyfin](#trakt--sonarr--radarr--jellyfin).
+> ❌ **Retired.** Trakt's old dashboard (`trakt.tv/dashboard`) now redirects to the new app (`app.trakt.tv/home`), so this script no longer runs. Its hourly auto-refresh lives on in [Trakt & MAL → Sonarr / Radarr / Jellyfin](#trakt--mal--sonarr--radarr--jellyfin).
 
 Allows to have multiple rows of tvshows on the trakt dashboard
 
@@ -73,16 +73,26 @@ The email isn't stored in the script: set it once from the Tampermonkey menu →
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js)
 
-## Trakt → Sonarr / Radarr / Jellyfin
+## Trakt & MAL → Sonarr / Radarr / Jellyfin
 
-Connects Trakt show and movie pages (`app.trakt.tv`) to your own media stack. No Trakt API key needed.
+Connects Trakt show and movie pages (`app.trakt.tv`) and MyAnimeList anime pages (`myanimelist.net/anime/…`) to your own media stack. One script and one set of settings for both sites. No Trakt or MAL API key needed.
+
+**On Trakt**
 
 - **Action button** in Trakt's action bar, with a status dot (following / paused / error) and a dropdown styled like Trakt's own menus.
-- **Sonarr / Radarr** – see episode or file status and size, follow or unfollow, monitor the current season, start a search, or add the title (with your chosen quality profile and root folder).
-- **Jellyfin** – if the title (or season) is in your library, a Jellyfin tile shows up in "Where to Watch" and opens it directly.
-- **Home auto-refresh** – reloads `app.trakt.tv/home` once it has been open for an hour (not while you're typing or the dropdown is open), so Up Next stays current. Change `HOME_REFRESH_MINUTES` to adjust.
+- **Sonarr / Radarr**: see episode or file status and size, follow or unfollow, monitor the current season, start a search, or add the title (with your chosen quality profile and root folder).
+- **Jellyfin**: if the title (or season) is in your library, a Jellyfin tile shows up in "Where to Watch" and opens it directly.
+- **Home auto-refresh**: reloads `app.trakt.tv/home` once it has been open for an hour (not while you're typing or the dropdown is open), so Up Next stays current. Change `HOME_REFRESH_MINUTES` to adjust.
 
-Nothing personal is stored in the script: set the Sonarr, Radarr and Jellyfin URLs and API keys from the Tampermonkey menu (or the **Settings…** item in the dropdown). Failed requests are logged to the console under `[Trakt-arr]`, with keys masked.
+**On MyAnimeList**
+
+- A **Library** section in the sidebar, in MAL's own style: follow status, episode counts for the exact season the MAL entry covers, follow/unfollow, monitor that season, start a search, or add the series to Sonarr as an anime series (movies go to Radarr).
+- MAL's **Watch Episodes** button turns into **Watch on Jellyfin** and opens the right season or movie when you have it.
+- IDs come from [Fribb/anime-lists](https://github.com/Fribb/anime-lists) (cached for 7 days), then the ARM API, then a title search in Sonarr/Radarr.
+
+Jellyfin is matched by TVDB/TMDB id first, then by exact name and year, so libraries that use other metadata (e.g. AniDB for anime) are still found.
+
+Nothing personal is stored in the script: set the Sonarr, Radarr and Jellyfin URLs and API keys from the Tampermonkey menu (or **Settings** on either site). **↻ Refresh caches** in the menu clears the cached ID matches and Jellyfin index. Failed requests are logged to the console under `[arr-jellyfin]`, with keys masked.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js)
 

@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![Riverside](https://www.google.com/s2/favicons?sz=12&domain=riverside.com) Riverside Copy Transcript](#riverside-copy-transcript) | Adds a button to the Riverside editor that copies the full transcript to the clipboard | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/riverside-copy-transcript.user.js) | 2026-11-19 |
 | ✅ | [![Rails](https://www.google.com/s2/favicons?sz=12&domain=rubyonrails.org) Mini Profiler fade](#mini-profiler-fade) | Dims the rack-mini-profiler badge on localhost:3000 | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js) | 2026-11-17 |
 | ✅ | [![Google Flights](https://www.google.com/s2/favicons?sz=12&domain=flights.google.com) Google Flights price per person](#google-flights-price-per-person) | Hover a total price to see it split per passenger | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js) | 2026-11-17 |
 | ✅ | [![MyAnimeList](https://www.google.com/s2/favicons?sz=12&domain=myanimelist.net) MAL Seasonal Tab Opener](#mal-seasonal-tab-opener) | Opens every anime in the home page seasonal widget in background tabs | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mal-seasonal-tab-opener.user.js) | 2026-11-17 |
@@ -114,3 +115,13 @@ Google Flights shows the total for all passengers. When you search for more than
 Makes the [rack-mini-profiler](https://github.com/MiniProfiler/rack-mini-profiler) timing badge 10% opaque on local Rails apps (`http://localhost:3000`), so it stays out of the way.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js)
+
+## Riverside Copy Transcript
+
+Adds a **Copy transcript** button (next to Comments) in the [Riverside](https://riverside.com) editor and review pages. The editor draws the transcript on a canvas, so it can't be selected and copied as text; this button copies the full transcript to the clipboard instead.
+
+- Speakers are labelled with a `[mm:ss]` timestamp, and consecutive sentences from the same speaker are joined into one paragraph.
+- Copies the full recorded transcript, including any parts cut in the edit.
+- Also available from the Tampermonkey menu → "Copy transcript".
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/riverside-copy-transcript.user.js)

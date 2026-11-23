@@ -3,8 +3,8 @@
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=flights.google.com
 // @namespace    https://github.com/RMoura98/moura-userscripts
 // @author       @RMoura98
-// @version      2026-11-17
-// @description  On Google Flights with more than one passenger, hovering a total price shows the price per person.
+// @version      2026-11-23
+// @description  On Google Flights with more than one passenger, hovering a total price shows the price per person in a Google-style tooltip.
 // @match        https://www.google.com/travel/flights
 // @match        https://www.google.com/travel/flights?*
 // @match        https://www.google.com/travel/flights/*
@@ -17,7 +17,36 @@
 (function () {
     'use strict';
 
-    const MARK = 'ppTitle';
+    const PRICE_SEL = "[aria-label*='euros'][role='text']";
+    const TIP_ID = 'moura-pp-tooltip';
+
+    // Same look as Google's own Material tooltips on the page
+    // (e.g. the "Change appearance" one): dark pill, 12px Roboto, 4px below the target.
+    const style = document.createElement('style');
+    style.textContent = `
+        #${TIP_ID} {
+            position: fixed;
+            z-index: 2101;
+            pointer-events: none;
+            background: rgb(60, 64, 67);
+            color: rgb(232, 234, 237);
+            font: 400 12px/16px Roboto, "Google Sans Text", sans-serif;
+            letter-spacing: 0.4px;
+            border-radius: 4px;
+            padding: 4px 8px;
+            white-space: nowrap;
+            opacity: 0;
+            transform: scale(0.8);
+            transition: opacity 75ms linear, transform 150ms cubic-bezier(0, 0, 0.2, 1);
+        }
+        #${TIP_ID}.moura-pp-show { opacity: 1; transform: scale(1); }
+    `;
+    document.head.appendChild(style);
+
+    const tip = document.createElement('div');
+    tip.id = TIP_ID;
+    tip.setAttribute('role', 'tooltip');
+    document.body.appendChild(tip);
 
     const getPassengerCount = () => {
         const el = document.querySelector("button[aria-label*='passenger']")
@@ -31,37 +60,42 @@
         return digits ? Number(digits) : null;
     };
 
-    const apply = () => {
+    const perPersonText = el => {
         const count = getPassengerCount();
-
-        document.querySelectorAll("[aria-label*='euros'][role='text']").forEach(el => {
-            if (count <= 1) {
-                // Passenger count went back to 1: drop titles we added earlier
-                if (el.dataset[MARK]) {
-                    el.removeAttribute('title');
-                    delete el.dataset[MARK];
-                }
-                return;
-            }
-
-            const total = extractPrice(el.textContent);
-            if (!total) return;
-
-            const title = `€${Math.round(total / count)} per person (${count} passengers)`;
-            if (el.title !== title) {
-                el.title = title;
-                el.dataset[MARK] = '1';
-            }
-        });
+        if (count <= 1) return null;
+        const total = extractPrice(el.textContent);
+        if (!total) return null;
+        return `€${Math.round(total / count)} per person (${count} passengers)`;
     };
 
-    // Google Flights is a single-page app: results and the passenger picker
-    // re-render without a page load, so watch the whole page (debounced).
-    let timer = null;
-    new MutationObserver(() => {
-        clearTimeout(timer);
-        timer = setTimeout(apply, 200);
-    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    let current = null;
 
-    apply();
+    const show = el => {
+        const text = perPersonText(el);
+        if (!text) return hide();
+        current = el;
+        tip.textContent = text;
+        const r = el.getBoundingClientRect();
+        const w = tip.offsetWidth;
+        const left = Math.min(Math.max(4, r.left + r.width / 2 - w / 2), window.innerWidth - w - 4);
+        tip.style.left = `${left}px`;
+        tip.style.top = `${r.bottom + 4}px`;
+        tip.classList.add('moura-pp-show');
+    };
+
+    const hide = () => {
+        current = null;
+        tip.classList.remove('moura-pp-show');
+    };
+
+    // Event delegation: results re-render without a page load, so no per-element setup.
+    document.addEventListener('mouseover', e => {
+        const el = e.target.closest && e.target.closest(PRICE_SEL);
+        if (el && el !== current) show(el);
+        else if (!el && current) hide();
+    });
+    document.addEventListener('mouseout', e => {
+        if (current && !current.contains(e.relatedTarget)) hide();
+    });
+    window.addEventListener('scroll', hide, { passive: true, capture: true });
 })();

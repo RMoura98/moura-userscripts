@@ -6,7 +6,7 @@
 | ✅ | [![GitHub](https://www.google.com/s2/favicons?sz=12&domain=github.com) GitHub Stargazers button](#github-stargazers-button) | Adds a stargazers icon button inside the Star button group on repos you administer | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/github-stargazers-button.user.js) | 2026-11-23 |
 | ✅ | [![Riverside](https://www.google.com/s2/favicons?sz=12&domain=riverside.com) Riverside Copy Transcript](#riverside-copy-transcript) | Adds a button to the Riverside editor that copies the full transcript to the clipboard | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/riverside-copy-transcript.user.js) | 2026-11-19 |
 | ✅ | [![Rails](https://www.google.com/s2/favicons?sz=12&domain=rubyonrails.org) Mini Profiler fade](#mini-profiler-fade) | Dims the rack-mini-profiler badge on localhost:3000 | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js) | 2026-11-17 |
-| ✅ | [![Google Flights](https://www.google.com/s2/favicons?sz=12&domain=flights.google.com) Google Flights price per person](#google-flights-price-per-person) | Hover a total price to see it split per passenger | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js) | 2026-11-17 |
+| ✅ | [![Google Flights](https://www.google.com/s2/favicons?sz=12&domain=flights.google.com) Google Flights price per person](#google-flights-price-per-person) | Hover a total price to see it split per passenger | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js) | 2026-11-23 |
 | ✅ | [![MyAnimeList](https://www.google.com/s2/favicons?sz=12&domain=myanimelist.net) MAL Seasonal Tab Opener](#mal-seasonal-tab-opener) | Opens every anime in the home page seasonal widget in background tabs | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mal-seasonal-tab-opener.user.js) | 2026-11-17 |
 | ✅ | [![Trakt](https://www.google.com/s2/favicons?sz=12&domain=trakt.tv) Trakt & MAL → Sonarr / Radarr / Jellyfin](#trakt--mal--sonarr--radarr--jellyfin) | Follow, monitor and search in Sonarr/Radarr from Trakt and MyAnimeList, plus a Jellyfin link | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js) | 2026-11-18 |
 | ✅ | [![Claude](https://www.google.com/s2/favicons?sz=12&domain=claude.ai) Claude.ai login email autofill](#claudeai-login-email-autofill) | Prefills your email on the Claude.ai login page (email set from the Tampermonkey menu) | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/claude-login-email-autofill.user.js) | 2026-11-17 |
@@ -30,6 +30,10 @@ Long-running Watch2Gether rooms get heavy and sluggish over time. This keeps an 
 Only runs inside rooms (`w2g.tv/*/room/...`). Thresholds live in the `CFG` block at the top of the script.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/w2g-watchdog.user.js)
+
+| Before | After |
+|--------|-------|
+| ![Before](previews/w2g-watchdog-before.png) | ![After](previews/w2g-watchdog-after.png) |
 
 ## Ultimate Guitar inline chords
 
@@ -99,17 +103,37 @@ Nothing personal is stored in the script: set the Sonarr, Radarr and Jellyfin UR
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/trakt-arr-jellyfin.user.js)
 
+**Trakt**
+
+| Before | After |
+|--------|-------|
+| ![Before](previews/trakt-arr-jellyfin-before.png) | ![After](previews/trakt-arr-jellyfin-after.png) |
+
+**MyAnimeList**
+
+| Before | After |
+|--------|-------|
+| ![Before](previews/trakt-arr-jellyfin-mal-before.png) | ![After](previews/trakt-arr-jellyfin-mal-after.png) |
+
 ## MAL Seasonal Tab Opener
 
 Adds an **Open All Tabs** link next to "View More" in the seasonal anime widget on the MyAnimeList home page. One click opens every anime in that widget in background tabs.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mal-seasonal-tab-opener.user.js)
 
+| Before | After |
+|--------|-------|
+| ![Before](previews/mal-seasonal-tab-opener-before.png) | ![After](previews/mal-seasonal-tab-opener-after.png) |
+
 ## Google Flights price per person
 
-Google Flights shows the total for all passengers. When you search for more than one passenger, hover any price to see what it comes to per person (for example "€153 per person (2 passengers)"). Works with prices shown in euros.
+Google Flights shows the total for all passengers. When you search for more than one passenger, hover any price to see what it comes to per person (for example "€153 per person (2 passengers)") in a tooltip styled like Google's own. Works with prices shown in euros.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js)
+
+| Before | After |
+|--------|-------|
+| ![Before](previews/google-flights-price-per-person-before.png) | ![After](previews/google-flights-price-per-person-after.png) |
 
 ## Mini Profiler fade
 
@@ -135,3 +159,7 @@ Adds a small icon button with the people icon to the repository header, between 
 - Keeps working through GitHub's in-page navigation and stays visible on narrow screens.
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/github-stargazers-button.user.js)
+
+| Before | After |
+|--------|-------|
+| ![Before](previews/github-stargazers-button-before.png) | ![After](previews/github-stargazers-button-after.png) |

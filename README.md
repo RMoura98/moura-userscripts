@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![GitHub](https://www.google.com/s2/favicons?sz=12&domain=github.com) GitHub Stargazers button](#github-stargazers-button) | Adds a stargazers icon button inside the Star button group on repos you administer | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/github-stargazers-button.user.js) | 2026-11-23 |
 | ✅ | [![Riverside](https://www.google.com/s2/favicons?sz=12&domain=riverside.com) Riverside Copy Transcript](#riverside-copy-transcript) | Adds a button to the Riverside editor that copies the full transcript to the clipboard | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/riverside-copy-transcript.user.js) | 2026-11-19 |
 | ✅ | [![Rails](https://www.google.com/s2/favicons?sz=12&domain=rubyonrails.org) Mini Profiler fade](#mini-profiler-fade) | Dims the rack-mini-profiler badge on localhost:3000 | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js) | 2026-11-17 |
 | ✅ | [![Google Flights](https://www.google.com/s2/favicons?sz=12&domain=flights.google.com) Google Flights price per person](#google-flights-price-per-person) | Hover a total price to see it split per passenger | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/google-flights-price-per-person.user.js) | 2026-11-17 |
@@ -125,3 +126,12 @@ Adds a **Copy transcript** button (next to Comments) in the [Riverside](https://
 - Also available from the Tampermonkey menu → "Copy transcript".
 
 [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/riverside-copy-transcript.user.js)
+
+## GitHub Stargazers button
+
+Adds a small icon button with the people icon to the repository header, between **Star** and the star-lists dropdown, styled like GitHub's own buttons (with the native "Stargazers" tooltip). Click it to open the repo's stargazers page.
+
+- Only appears on repositories where you can see the **Settings** tab, so it stays out of the way on other people's repos.
+- Keeps working through GitHub's in-page navigation and stays visible on narrow screens.
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/github-stargazers-button.user.js)

@@ -3,6 +3,7 @@
 
 | State | Userscript | Description | Download link | Last update |
 |-------|------------|-------------|---------------|-------------|
+| ✅ | [![GitHub](https://www.google.com/s2/favicons?sz=12&domain=github.com) GitHub Forks button](#github-forks-button) | Adds a forks-list icon button joined to the Fork button on repos you administer | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/github-forks-button.user.js) | 2026-11-25 |
 | ✅ | [![GitHub](https://www.google.com/s2/favicons?sz=12&domain=github.com) GitHub Stargazers button](#github-stargazers-button) | Adds a stargazers icon button inside the Star button group on repos you administer | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/github-stargazers-button.user.js) | 2026-11-23 |
 | ✅ | [![Riverside](https://www.google.com/s2/favicons?sz=12&domain=riverside.com) Riverside Copy Transcript](#riverside-copy-transcript) | Adds a button to the Riverside editor that copies the full transcript to the clipboard | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/riverside-copy-transcript.user.js) | 2026-11-19 |
 | ✅ | [![Rails](https://www.google.com/s2/favicons?sz=12&domain=rubyonrails.org) Mini Profiler fade](#mini-profiler-fade) | Dims the rack-mini-profiler badge on localhost:3000 | [⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/mini-profiler-fade.user.js) | 2026-11-17 |
@@ -163,3 +164,16 @@ Adds a small icon button with the people icon to the repository header, between 
 | Before | After |
 |--------|-------|
 | ![Before](previews/github-stargazers-button-before.png) | ![After](previews/github-stargazers-button-after.png) |
+
+## GitHub Forks button
+
+Adds a small icon button with the list icon to the repository header, joined to the right of **Fork** and styled like GitHub's own buttons (with the native "Forks" tooltip). Click it to open the repo's forks list (`/<owner>/<repo>/forks`).
+
+- Only appears on repositories where you can see the **Settings** tab, so it stays out of the way on other people's repos.
+- Keeps working through GitHub's in-page navigation.
+
+[⬇️ Download](https://github.com/RMoura98/moura-userscripts/raw/main/github-forks-button.user.js)
+
+| Before | After |
+|--------|-------|
+| ![Before](previews/github-forks-button-before.png) | ![After](previews/github-forks-button-after.png) |
